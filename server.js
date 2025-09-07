@@ -40,7 +40,8 @@ const {
   APP_JWT_SECRET,
 
   // (ทางเลือก) ตั้ง default rich menu ตอนบูต
-  RICHMENU_DEFAULT_ID
+  RICHMENU_DEFAULT_ID,
+  CRON_KEY, 
 } = process.env;
 
 // ── fetch (polyfill)
@@ -516,10 +517,12 @@ function parseAssignLoose(text) {
   if (/(ด่วน(ที่สุด|สุด)?|urgent)/i.test(body)) {
     note = '[URGENT]';
     body = body.replace(/(ด่วน(ที่สุด|สุด)?|urgent)/ig, ' ');
-  } else if (/(ไม่รีบ|normal|ค่อยทำ)/i.test(body)) {
-    note = '[NORMAL]';
+  } else if (/(ไม่รีบ(?:นะ)?|normal|ค่อยทำ)/i.test(body)) {
+    // เก็บคำเดิมเป็นโน้ต
+    note = (note ? (note + ' ') : '') + 'ไม่รีบ';
     body = body.replace(/(ไม่รีบ(?:นะ)?|normal|ค่อยทำ)/ig, ' ');
   }
+
   // เก็บกวาดฟิลเลอร์ปลายประโยค (ให้จับได้ทั้งมี/ไม่มีเว้นวรรค)
   body = body
     .replace(/(?:^|\s)(ก่อน|ภายใน|นะ|ด้วย)(?=\s|$)/g, ' ')
@@ -643,9 +646,11 @@ function parseAssign(text){
     body = body.replace(/(ด่วน(ที่สุด|สุด)?|urgent)/ig, ' ');
   }
   if (!urgentInText && normalInText) {
-    note = note ? `[NORMAL] ${note}` : `[NORMAL]`;
+    // เก็บคำเดิมเป็นโน้ต
+    note = note ? (note + ' ไม่รีบ') : 'ไม่รีบ';
     body = body.replace(/(ไม่รีบ(?:นะ)?|normal|ค่อยทำ)/ig, ' ');
   }
+
   // เก็บกวาดฟิลเลอร์
   body = body
     .replace(/(?:^|\s)(นะ|ด้วย)(?=\s|$)/g, ' ')
@@ -1573,6 +1578,22 @@ app.post('/webhook/line', async (req,res)=>{
 // ── Health
 app.get('/healthz', (_req,res)=>res.send('ok'));
 
+// ── Secure cron endpoint (ใช้กับ Render Cron Job)
+app.post('/api/cron/reset-richmenu', async (req, res) => {
+  try {
+    const key = (req.query.key || req.body?.key || '').trim();
+    if (!CRON_KEY || key !== CRON_KEY) return res.status(403).send('forbidden');
+
+    await setDefaultRichMenu(RICHMENU_ID_PREREG);      // ตั้งเป็น default ทั่วระบบ
+    // (ออปชัน) ถ้าอยากทับค่าเฉพาะรายบุคคลซ้ำด้วย ให้เขียน helper linkRichMenuToAllUsers แล้วเรียกที่นี่
+    res.send('ok');
+  } catch (e) {
+    console.error('CRON_RESET_ERR', e);
+    res.status(500).send('error');
+  }
+});
+
+
 // ── Static (ถ้าคุณมี frontend/dist)
 const distDir = path.join(__dirname, 'frontend', 'dist');
 app.use(express.static(distDir));
@@ -1752,6 +1773,23 @@ app.get('/api/admin/tasks/export_link', async (req,res)=>{
     res.send(csv);
   }catch(e){ console.error('CSV_EXPORT_LINK_ERR', e); res.status(500).json({ok:false}); }
 });
+
+// ── Secure cron endpoint (ใช้กับ Render Cron Job)
+async function handleResetRichmenu(req, res) {
+  try {
+    const key = (req.query.key || req.body?.key || '').trim();
+    if (!CRON_KEY || key !== CRON_KEY) return res.status(403).send('forbidden');
+
+    await setDefaultRichMenu(RICHMENU_ID_PREREG);
+    // ถ้ามี helper linkRichMenuToAllUsers(...) ก็เรียกเพิ่มที่นี่
+    return res.send('ok');
+  } catch (e) {
+    console.error('CRON_RESET_ERR', e);
+    return res.status(500).send('error');
+  }
+}
+app.all('/api/cron/reset-richmenu', handleResetRichmenu);   // 👈 รับทั้ง GET/POST
+
 
 
 // ── Schedulers (08:30 / 17:30)
