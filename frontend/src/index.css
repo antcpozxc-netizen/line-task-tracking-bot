@@ -1,0 +1,15 @@
+/* Reset base layout to full width/height (override Vite defaults) */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+* { box-sizing: border-box; }
+
+/* โทนพื้นหลังเทาอ่อนแบบเดียวทั้งแอป */
+body { background: #f3f7fb; }
+
+/* ไม่ใช้ max-width/center ของ Vite เดิมอีกต่อไป */
+#root { max-width: 100% !important; padding: 0 !important; }
