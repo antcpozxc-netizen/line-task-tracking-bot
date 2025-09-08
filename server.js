@@ -937,7 +937,7 @@ app.post('/webhook/line', async (req,res)=>{
       }
 
           // ===== Magic Link Login =====
-      if (/^(จัดการผู้ใช้|จัดการผู้ใช้งาน|เข้าสู่ระบบ|admin|dashboard)$/i.test(text)) {
+      if (/^(จัดการผู้ใช้|จัดการผู้ใช้งาน|เข้าสู่ระบบ|เข้าระบบ|admin|dashboard)$/i.test(text)) {
         try {
           // 1) ตรวจ role จาก Google Sheet
           const r = await callAppsScript('get_user', { user_id: userId });
