@@ -1604,6 +1604,17 @@ app.post('/api/cron/reset-richmenu', async (req, res) => {
 // ── Static (ถ้าคุณมี frontend/dist)
 const distDir = path.join(__dirname, 'frontend', 'dist');
 app.use(express.static(distDir));
+
+
+// server.js (วางไว้เหนือ block ที่มี app.get(/^\/(?!api|auth|webhook|healthz).*/, ...))
+const mustLoginPaths = ['/app', '/tasks', '/onboarding', '/admin', '/admin/users', '/admin/users-split'];
+app.get(mustLoginPaths, (req, res) => {
+  const s = readSession(req);
+  if (!s) return res.redirect('/login');    // ยังไม่มี sess → ไปหน้า login
+  res.sendFile(path.join(distDir, 'index.html'));
+});
+
+
 app.get(/^\/(?!api|auth|webhook|healthz).*/, (_req,res)=>{
   res.sendFile(path.join(distDir, 'index.html'));
 });
@@ -1706,13 +1717,21 @@ app.get('/auth/line/callback', async (req, res) => {
   }
 });
 
-// ดึงโปรไฟล์จาก LINE Login (OIDC) – วางไว้ใกล้ๆ กับ fetchLineProfile ด้านบนก็ได้
+// --- LINE Login helpers ---
 async function fetchLoginUserInfo(accessToken) {
   const r = await fetchFn('https://api.line.me/oauth2/v2.1/userinfo', {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (!r.ok) throw new Error('GET_USERINFO_FAILED:' + r.status);
-  return r.json();
+  return r.json();  // { sub, name, picture, ... }
+}
+
+async function fetchLineProfile(accessToken) {
+  const r = await fetchFn('https://api.line.me/v2/profile', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!r.ok) throw new Error('GET_PROFILE_FAILED:' + r.status);
+  return r.json();  // { userId, displayName, ... }
 }
 
 

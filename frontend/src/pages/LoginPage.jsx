@@ -9,12 +9,14 @@ export default function LoginPage() {
   const me = useMe();
   const navigate = useNavigate();
 
-  // ✅ ถ้า login แล้ว ไม่ให้ค้างอยู่หน้าล็อกอิน
   useEffect(() => {
     if (!me.loading && me.data?.ok) {
       navigate('/app', { replace: true });
     }
   }, [me.loading, me.data, navigate]);
+
+  // ✅ ระหว่างกำลังเช็ค หรือรู้แล้วว่า login แล้ว → ไม่ต้องวาดหน้าล็อกอิน
+  if (me.loading || me.data?.ok) return null;
 
   const handleLogin = () => {
     window.location.href = '/auth/line/start';
