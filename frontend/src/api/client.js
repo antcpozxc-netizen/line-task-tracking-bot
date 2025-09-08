@@ -69,8 +69,7 @@ export const deleteUser = (user_id) =>
 
 // ---- Tasks (match server.js) ----
 // ดึงงาน (GET /api/admin/tasks?assignee_id=&assignee_name=&status=)
-export const listTasks = (opts = {}) =>
-  apiGet('/api/admin/tasks' + qs(opts));
+export const listTasks = (opts = {}) => apiGet('/api/admin/tasks' + qs(opts));
 
 // เปลี่ยนสถานะงาน (POST /api/admin/tasks/status  body: { task_id, status })
 export const updateTaskStatus = (task_id, status) =>
@@ -78,3 +77,9 @@ export const updateTaskStatus = (task_id, status) =>
 
 // (ถ้ามีใน server ค่อยเปิดใช้)
 // export const listTasksMine = () => apiGet('/api/tasks/mine');
+
+// Export CSV (ดาวน์โหลดไฟล์โดยตรง)
+export const exportTasksCsv = (opts = {}) => {
+  const url = '/api/admin/tasks/export' + qs(opts);
+  window.location.href = url; // ให้เบราว์เซอร์ดาวน์โหลดไฟล์
+};

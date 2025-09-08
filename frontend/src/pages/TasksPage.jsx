@@ -8,7 +8,9 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckIcon from '@mui/icons-material/Check';
-import { listUsers, listTasks, updateTaskStatus } from '../api/client';
+import { listUsers, listTasks, updateTaskStatus, exportTasksCsv } from '../api/client';
+import Button from '@mui/material/Button';
+import Stack from '@mui/material/Stack';
 
 // ---- utils ----
 function parseDeadline(s) {
@@ -187,6 +189,17 @@ export default function TasksPage() {
                 <MenuItem value="doing">doing</MenuItem>
                 <MenuItem value="done">done</MenuItem>
               </Select>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={()=> activeUser && exportTasksCsv({
+                  assignee_id: activeUser.user_id,
+                  assignee_name: activeUser.real_name || activeUser.username || ''
+                })}
+                disabled={!activeUser}
+              >
+                Export CSV
+              </Button>
               <Tooltip title="Refresh">
                 <span><IconButton onClick={load} disabled={!activeUser}><RefreshIcon/></IconButton></span>
               </Tooltip>

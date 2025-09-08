@@ -1771,10 +1771,12 @@ app.get('/api/admin/tasks',
     try{
       const assignee_id   = String(req.query.assignee_id || '');
       const assignee_name = String(req.query.assignee_name || '');
+      const assigner_id   = String(req.query.assigner_id || '');
       const status        = String(req.query.status || ''); // << เพิ่ม
       const payload = {};
       if (assignee_id) payload.assignee_id = assignee_id;
       if (!assignee_id && assignee_name) payload.assignee_name = assignee_name;
+      if (assigner_id) payload.assigner_id = assigner_id;
       if (status) payload.status = status;                   // << เพิ่ม
 
       const r = await callAppsScript('list_tasks', payload);
@@ -1858,11 +1860,13 @@ app.get('/api/admin/tasks/export',
     try{
       const assignee_id   = String(req.query.assignee_id || '');
       const assignee_name = String(req.query.assignee_name || '');
+      const assigner_id   = String(req.query.assigner_id || '');
       const from_date     = String(req.query.from || '');
       const to_date       = String(req.query.to || '');
       const payload = {};
       if (assignee_id) payload.assignee_id = assignee_id;
       if (!assignee_id && assignee_name) payload.assignee_name = assignee_name;
+      if (assigner_id) payload.assigner_id = assigner_id;
       if (from_date) payload.from_date = from_date;
       if (to_date)   payload.to_date   = to_date;
 

@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableHead, TableRow, TableCell,
   TableBody, TableContainer, Chip, Select, MenuItem, IconButton, Divider, Tooltip,
-  Snackbar, Alert
+  Snackbar, Alert, Button, Stack
 } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -41,6 +42,7 @@ export default function AdminUsersSplitPage() {
   const { data } = useMe();
   const myRole = (data?.user?.role || 'user').toLowerCase();
   const myRank = ROLE_RANK[myRole] || 0;
+  const navigate = useNavigate();
 
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -228,7 +230,14 @@ export default function AdminUsersSplitPage() {
       {/* header + refresh */}
       <Box sx={{ my:2, display:'flex', alignItems:'center', justifyContent:'space-between', gap:1, flexWrap:'wrap' }}>
         <Typography variant="h5" fontWeight={800}>Administrator management</Typography>
-        <Box sx={{ display:'flex', alignItems:'center', gap:1 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={()=>navigate('/admin/users?assignedBy=me')}
+          >
+            ดูงานที่ฉันสั่ง
+          </Button>
           {refreshedAt && (
             <Typography variant="caption" color="text.secondary" sx={{ display:{ xs:'none', sm:'block' } }}>
               อัปเดตล่าสุด {new Intl.DateTimeFormat('th-TH',{ dateStyle:'short', timeStyle:'short'}).format(refreshedAt)}
@@ -237,7 +246,7 @@ export default function AdminUsersSplitPage() {
           <Tooltip title="Refresh">
             <span><IconButton onClick={load} disabled={busy}><RefreshIcon/></IconButton></span>
           </Tooltip>
-        </Box>
+        </Stack>
       </Box>
 
       <TableBlock title="Developers"           items={devRows} />
