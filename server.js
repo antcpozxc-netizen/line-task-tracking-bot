@@ -1818,37 +1818,31 @@ app.get('/api/admin/users',
   }
 );
 
+// ต้องอนุญาตให้ developer/admin/supervisor ใช้ได้
 app.post('/api/admin/users/role',
-  express.json(),
-  requireAuth,
-  requireRole(['admin','supervisor','developer']),
+  requireRole(['developer', 'admin', 'supervisor']),
   async (req, res) => {
-    try {
-      const { user_id, role } = req.body || {};
-      if (!user_id || !role) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
-      await callAppsScript('set_user_role', { user_id, role });
-      res.json({ ok: true });
-    } catch (e) {
-      console.error('USERS_SET_ROLE_ERR', e);
-      res.status(500).json({ ok: false });
-    }
+    const { user_id, role } = req.body || {};
+    if (!user_id || !role) return res.status(400).json({ ok:false, error:'missing params' });
+
+    // เรียก Apps Script: ชื่อ action ต้องตรงกับสคริปต์คุณ
+    const r = await callAppsScript('set_user_role', { user_id, role });
+    if (!r.ok) return res.status(500).json({ ok:false, error:r.error || 'script failed' });
+
+    res.json({ ok:true });
   }
 );
 
 app.post('/api/admin/users/status',
-  express.json(),
-  requireAuth,
-  requireRole(['admin','supervisor','developer']),
+  requireRole(['developer', 'admin', 'supervisor']),
   async (req, res) => {
-    try {
-      const { user_id, status } = req.body || {};
-      if (!user_id || !status) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
-      await callAppsScript('set_user_status', { user_id, status });
-      res.json({ ok: true });
-    } catch (e) {
-      console.error('USERS_SET_STATUS_ERR', e);
-      res.status(500).json({ ok: false });
-    }
+    const { user_id, status } = req.body || {};
+    if (!user_id || !status) return res.status(400).json({ ok:false, error:'missing params' });
+
+    const r = await callAppsScript('set_user_status', { user_id, status });
+    if (!r.ok) return res.status(500).json({ ok:false, error:r.error || 'script failed' });
+
+    res.json({ ok:true });
   }
 );
 

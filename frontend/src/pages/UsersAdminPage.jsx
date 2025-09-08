@@ -1,156 +1,124 @@
+// src/pages/UsersAdminPage.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Select, MenuItem, IconButton, Chip, Stack, Tooltip,
-  Snackbar, Alert, TableSortLabel
+  Box, Container, Typography, Paper, Table, TableHead, TableRow, TableCell,
+  TableBody, Chip, Select, MenuItem, IconButton, Tooltip, TableContainer,
+  Snackbar, Alert
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import TableSortLabel from '@mui/material/TableSortLabel';
 import { listUsers, setUserRole, setUserStatus, deleteUser } from '../api/client';
 
-const RoleBadge = ({ role }) => {
-  const r = String(role || 'user').toLowerCase();
-  const color = r==='developer' ? 'secondary' : (['admin','supervisor'].includes(r)?'primary':'default');
-  return <Chip size="small" label={r} color={color} />;
+const colSx = {
+  id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
+  username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
+  name:    {
+    width:{ xs:'34%', md:'38%' }, maxWidth:480,
+    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
+  },
+  role:    { width:{ xs:140, md:170 }, whiteSpace:'nowrap' },
+  status:  { width:{ xs:130, md:150 }, whiteSpace:'nowrap' },
+  updated: { width:{ xs:0, md:220 }, display:{ xs:'none', md:'table-cell' }, whiteSpace:'nowrap' },
+  action:  { width:{ xs:70, md:80 }, textAlign:'center', whiteSpace:'nowrap' },
 };
 
-function cmp(a,b,by){
-  // สำหรับ sort ทุกคอลัมน์
-  if (by==='updated_at') {
-    return new Date(a.updated_at||0) - new Date(b.updated_at||0);
-  }
-  return String(a?.[by] ?? '').localeCompare(String(b?.[by] ?? ''), 'th');
+function RoleSelect({ value, onChange, disabled }) {
+  const v = String(value || 'user').toLowerCase();
+  return (
+    <Select size="small" value={v} onChange={(e)=>onChange(e.target.value)} disabled={disabled}>
+      <MenuItem value="developer">developer</MenuItem>
+      <MenuItem value="admin">admin</MenuItem>
+      <MenuItem value="supervisor">supervisor</MenuItem>
+      <MenuItem value="user">user</MenuItem>
+    </Select>
+  );
+}
+function StatusSelect({ value, onChange, disabled }) {
+  const v = String(value || 'Active');
+  return (
+    <Select size="small" value={v} onChange={(e)=>onChange(e.target.value)} disabled={disabled}>
+      <MenuItem value="Active">Active</MenuItem>
+      <MenuItem value="Inactive">Inactive</MenuItem>
+    </Select>
+  );
 }
 
-function UsersTable({ title, rows, onChangeRole, onChangeStatus, onDelete }) {
-  const [orderBy, setOrderBy] = useState('username');
-  const [order, setOrder] = useState('asc');
-
-  const sorted = useMemo(()=>{
-    const arr = [...rows];
-    arr.sort((a,b) => (order==='asc'?1:-1) * cmp(a,b,orderBy));
-    return arr;
-  }, [rows, orderBy, order]);
-
-  const onSort = (by) => {
-    if (orderBy===by) setOrder(order==='asc'?'desc':'asc');
-    else { setOrderBy(by); setOrder('asc'); }
-  };
-
+function IdCell({ id, onCopy }) {
   return (
-    <Paper variant="outlined" sx={{ p:0, borderRadius:3, overflow:'hidden' }}>
-      <Box sx={{ px:2, py:1.5, fontWeight:700 }}>{title}</Box>
-      <TableContainer>
-        <Table size="small">
+    <Box sx={{ display:'flex', alignItems:'center', gap:1, ...colSx.id }}>
+      <Box sx={{ overflow:'hidden', textOverflow:'ellipsis' }}>{id}</Box>
+      <Tooltip title="คัดลอก user_id">
+        <span>
+          <IconButton size="small" onClick={()=>onCopy(id)}>
+            <ContentCopyIcon fontSize="inherit" />
+          </IconButton>
+        </span>
+      </Tooltip>
+    </Box>
+  );
+}
+
+function Section({ title, rows, busy, onChangeRole, onChangeStatus, onDelete, sort, orderBy, order, onSort }) {
+  return (
+    <Paper variant="outlined" sx={{ p:2, borderRadius:3, mb:3 }}>
+      <Typography variant="subtitle1" fontWeight={700} sx={{ mb:1.5 }}>{title}</Typography>
+      <TableContainer sx={{ overflowX:'auto', maxHeight:{ xs:420, md:560 } }}>
+        <Table size="small" stickyHeader sx={{ tableLayout: 'fixed' }}>
           <TableHead>
             <TableRow>
-              {/* user_id คอลัมน์แคบ + copy */}
-              <TableCell sx={{ width:180, whiteSpace:'nowrap' }}>
-                <TableSortLabel active={orderBy==='user_id'} direction={orderBy==='user_id'?order:'asc'} onClick={()=>onSort('user_id')}>
-                  user_id
-                </TableSortLabel>
-              </TableCell>
-
-              <TableCell>
-                <TableSortLabel active={orderBy==='username'} direction={orderBy==='username'?order:'asc'} onClick={()=>onSort('username')}>
-                  username
-                </TableSortLabel>
-              </TableCell>
-
-              <TableCell>
-                <TableSortLabel active={orderBy==='real_name'} direction={orderBy==='real_name'?order:'asc'} onClick={()=>onSort('real_name')}>
-                  name
-                </TableSortLabel>
-              </TableCell>
-
-              <TableCell sx={{ width:170 }}>
-                <TableSortLabel active={orderBy==='role'} direction={orderBy==='role'?order:'asc'} onClick={()=>onSort('role')}>
-                  role
-                </TableSortLabel>
-              </TableCell>
-
-              <TableCell sx={{ width:160 }}>
-                <TableSortLabel active={orderBy==='status'} direction={orderBy==='status'?order:'asc'} onClick={()=>onSort('status')}>
-                  status
-                </TableSortLabel>
-              </TableCell>
-
-              <TableCell sx={{ width:220, display:{ xs:'none', md:'table-cell' } }}>
-                <TableSortLabel active={orderBy==='updated_at'} direction={orderBy==='updated_at'?order:'asc'} onClick={()=>onSort('updated_at')}>
-                  updated_at
-                </TableSortLabel>
-              </TableCell>
-
-              <TableCell align="right" sx={{ width:80 }}>action</TableCell>
+              {[
+                ['user_id','user_id', colSx.id],
+                ['username','username', colSx.username],
+                ['name','name', colSx.name],
+                ['role','role', colSx.role],
+                ['status','status', colSx.status],
+                ['updated_at','updated_at', colSx.updated],
+              ].map(([label, key, sx])=>(
+                <TableCell key={key} sx={sx} sortDirection={orderBy===key?order:false}>
+                  <TableSortLabel
+                    active={orderBy===key}
+                    direction={orderBy===key?order:'asc'}
+                    onClick={()=>onSort(key)}
+                  >
+                    {label}
+                  </TableSortLabel>
+                </TableCell>
+              ))}
+              <TableCell sx={colSx.action}>action</TableCell>
             </TableRow>
           </TableHead>
-
           <TableBody>
-            {sorted.map(u=>(
+            {rows.map(u=>(
               <TableRow key={u.user_id} hover>
-                <TableCell sx={{ maxWidth:180 }}>
-                  <Box sx={{ display:'flex', alignItems:'center', gap:0.5 }}>
-                    <Box sx={{
-                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1,
-                      fontFamily:'monospace'
-                    }}>
-                      {u.user_id}
-                    </Box>
-                    <Tooltip title="คัดลอก">
-                      <IconButton size="small" onClick={()=>navigator.clipboard.writeText(u.user_id)}>
-                        <ContentCopyIcon fontSize="inherit" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
+                <TableCell sx={colSx.id}>
+                  <IdCell id={u.user_id} onCopy={onDelete.copy} />
                 </TableCell>
-
-                <TableCell sx={{minWidth:140}}>{u.username}</TableCell>
-                <TableCell sx={{minWidth:160}}>{u.real_name || '-'}</TableCell>
-
-                <TableCell>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Select
-                      size="small"
-                      value={String(u.role||'user').toLowerCase()}
-                      onChange={(e)=>onChangeRole(u.user_id, e.target.value)}
-                      sx={{ minWidth:130 }}
-                    >
-                      <MenuItem value="developer">developer</MenuItem>
-                      <MenuItem value="admin">admin</MenuItem>
-                      <MenuItem value="supervisor">supervisor</MenuItem>
-                      <MenuItem value="user">user</MenuItem>
-                    </Select>
-                    <RoleBadge role={u.role}/>
-                  </Stack>
+                <TableCell sx={colSx.username}>{u.username || '-'}</TableCell>
+                <TableCell sx={colSx.name}>{u.real_name || '-'}</TableCell>
+                <TableCell sx={colSx.role}>
+                  <RoleSelect value={u.role} onChange={(r)=>onChangeRole(u, r)} disabled={busy}/>
+                  {!!u.role && <Chip size="small" sx={{ ml:1 }} label={String(u.role)} />}
                 </TableCell>
-
-                <TableCell>
-                  <Select
-                    size="small"
-                    value={u.status || 'Active'}
-                    onChange={(e)=>onChangeStatus(u.user_id, e.target.value)}
-                    sx={{ minWidth:120 }}
-                  >
-                    <MenuItem value="Active">Active</MenuItem>
-                    <MenuItem value="Inactive">Inactive</MenuItem>
-                  </Select>
+                <TableCell sx={colSx.status}>
+                  <StatusSelect value={u.status} onChange={(s)=>onChangeStatus(u, s)} disabled={busy}/>
                 </TableCell>
-
-                <TableCell sx={{ display:{ xs:'none', md:'table-cell' } }}>
-                  {u.updated_at || ''}
-                </TableCell>
-
-                <TableCell align="right">
-                  <Tooltip title="ลบ (ตั้งสถานะเป็น Inactive)">
+                <TableCell sx={colSx.updated}>{u.updated_at || ''}</TableCell>
+                <TableCell sx={colSx.action} align="center">
+                  <Tooltip title="ลบ (ตั้งเป็น Inactive)">
                     <span>
-                      <IconButton color="error" onClick={()=>onDelete(u)}><DeleteOutlineIcon/></IconButton>
+                      <IconButton size="small" color="error" disabled={busy}
+                        onClick={()=>onDelete.ask(u)}>
+                        <DeleteOutlineIcon/>
+                      </IconButton>
                     </span>
                   </Tooltip>
                 </TableCell>
               </TableRow>
             ))}
-            {sorted.length===0 && (
-              <TableRow><TableCell colSpan={7} align="center" sx={{ py:3, color:'text.secondary' }}>No users</TableCell></TableRow>
+            {rows.length===0 && (
+              <TableRow><TableCell colSpan={7} align="center" sx={{ color:'text.secondary', py:3 }}>No users</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -159,50 +127,151 @@ function UsersTable({ title, rows, onChangeRole, onChangeStatus, onDelete }) {
   );
 }
 
+function cmp(a,b,by){
+  const A = (a?.[by] ?? '').toString(), B = (b?.[by] ?? '').toString();
+  return A.localeCompare(B, 'th');
+}
+
 export default function UsersAdminPage(){
-  const [all, setAll]   = useState([]);
-  const [toast, setToast] = useState({ open:false, msg:'', sev:'success' });
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [snack, setSnack] = useState({ open:false, msg:'', sev:'success' });
+  const [refreshedAt, setRefreshedAt] = useState(null);
+
+  // sort state
+  const [orderBy, setOrderBy] = useState('updated_at');
+  const [order, setOrder] = useState('desc');
 
   const load = async () => {
-    const j = await listUsers();
-    setAll(j.users || []);
+    setBusy(true);
+    try {
+      const j = await listUsers();
+      setRows(j.users || []);
+      setRefreshedAt(new Date());
+    } finally {
+      setBusy(false);
+    }
   };
-  useEffect(()=>{ load(); },[]);
+  useEffect(()=>{ load(); }, []);
 
-  const devs  = useMemo(()=> all.filter(u => String(u.role||'').toLowerCase()==='developer'), [all]);
-  const leads = useMemo(()=> all.filter(u => ['admin','supervisor'].includes(String(u.role||'').toLowerCase())), [all]);
-  const users = useMemo(()=> all.filter(u => !['admin','supervisor','developer'].includes(String(u.role||'').toLowerCase())), [all]);
+  const sorted = useMemo(()=>{
+    const arr = [...rows];
+    arr.sort((a,b)=> (order==='asc'?1:-1) * cmp(a,b,orderBy));
+    return arr;
+  }, [rows, order, orderBy]);
 
-  const ok = (msg)=> setToast({open:true,msg,sev:'success'});
-  const err= (msg)=> setToast({open:true,msg,sev:'error'});
+  const groups = useMemo(()=>{
+    const dev = [], adm = [], usr = [];
+    for (const u of sorted) {
+      const r = String(u.role||'user').toLowerCase();
+      if (r==='developer') dev.push(u);
+      else if (r==='admin' || r==='supervisor') adm.push(u);
+      else usr.push(u);
+    }
+    return { dev, adm, usr };
+  }, [sorted]);
 
-  const onChangeRole = async (user_id, role) => {
-    try { await setUserRole(user_id, role); ok('เปลี่ยนบทบาทแล้ว'); await load(); }
-    catch { err('เปลี่ยนบทบาทไม่สำเร็จ'); }
+  const onSort = (by)=>{
+    if (orderBy===by) setOrder(order==='asc' ? 'desc':'asc');
+    else { setOrderBy(by); setOrder('asc'); }
   };
-  const onChangeStatus = async (user_id, status) => {
-    try { await setUserStatus(user_id, status); ok('อัปเดตสถานะแล้ว'); await load(); }
-    catch { err('อัปเดตสถานะไม่สำเร็จ'); }
+
+  const doRole = async (u, role) => {
+    setBusy(true);
+    try {
+      await setUserRole(u.user_id, role);
+      setSnack({ open:true, msg:'อัปเดตบทบาทแล้ว', sev:'success' });
+      await load();                 // โหลดใหม่เพื่อย้ายแถวไปกลุ่มที่ถูกต้อง
+    } catch (e) {
+      setSnack({ open:true, msg:'เปลี่ยนบทบาทไม่สำเร็จ', sev:'error' });
+    } finally { setBusy(false); }
   };
-  const onDelete = async (u) => {
-    const go = window.confirm(`ยืนยันการลบผู้ใช้ ${u.real_name || u.username}? (ระบบจะตั้งเป็น Inactive)`);
-    if (!go) return;
-    try { await deleteUser(u.user_id); ok('ลบผู้ใช้แล้ว'); await load(); }
-    catch { err('ลบผู้ใช้ไม่สำเร็จ'); }
+
+  const doStatus = async (u, status) => {
+    setBusy(true);
+    try {
+      await setUserStatus(u.user_id, status);
+      setSnack({ open:true, msg:'อัปเดตสถานะแล้ว', sev:'success' });
+      await load();
+    } catch {
+      setSnack({ open:true, msg:'อัปเดตสถานะไม่สำเร็จ', sev:'error' });
+    } finally { setBusy(false); }
+  };
+
+  const onCopy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setSnack({ open:true, msg:'คัดลอก user_id แล้ว', sev:'success' });
+    } catch {
+      setSnack({ open:true, msg:'คัดลอกไม่สำเร็จ', sev:'error' });
+    }
+  };
+
+  const askDelete = async (u) => {
+    if (!window.confirm(`ยืนยันลบผู้ใช้ (ตั้งสถานะเป็น Inactive):\n${u.real_name || u.username || u.user_id}`)) return;
+    setBusy(true);
+    try {
+      await deleteUser(u.user_id);
+      setSnack({ open:true, msg:'ตั้งเป็น Inactive แล้ว', sev:'success' });
+      await load();
+    } catch {
+      setSnack({ open:true, msg:'ลบไม่สำเร็จ', sev:'error' });
+    } finally { setBusy(false); }
   };
 
   return (
     <Container sx={{ pb:6 }}>
-      <Typography variant="h5" fontWeight={800} sx={{ mb:2 }}>Administrator management</Typography>
+      <Box sx={{
+        my:2, display:'flex', alignItems:'center', justifyContent:'space-between', gap:1,
+        flexWrap:'wrap'
+      }}>
+        <Typography variant="h5" fontWeight={800}>Administrator management</Typography>
+        <Box sx={{ display:'flex', alignItems:'center', gap:1 }}>
+          {refreshedAt && (
+            <Typography variant="caption" color="text.secondary" sx={{ display:{ xs:'none', sm:'block' } }}>
+              อัปเดตล่าสุด {new Intl.DateTimeFormat('th-TH',{ dateStyle:'short', timeStyle:'short'}).format(refreshedAt)}
+            </Typography>
+          )}
+          <Tooltip title="Refresh">
+            <span>
+              <IconButton onClick={load} disabled={busy}>
+                <RefreshIcon/>
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
+      </Box>
 
-      <Stack spacing={2}>
-        <UsersTable title="Developers" rows={devs}  onChangeRole={onChangeRole} onChangeStatus={onChangeStatus} onDelete={onDelete} />
-        <UsersTable title="Admins & Supervisors" rows={leads} onChangeRole={onChangeRole} onChangeStatus={onChangeStatus} onDelete={onDelete} />
-        <UsersTable title="Users" rows={users} onChangeRole={onChangeRole} onChangeStatus={onChangeStatus} onDelete={onDelete} />
-      </Stack>
+      <Section
+        title="Developers"
+        rows={groups.dev}
+        busy={busy}
+        onChangeRole={doRole}
+        onChangeStatus={doStatus}
+        onDelete={{ ask:askDelete, copy:onCopy }}
+        sort={cmp} orderBy={orderBy} order={order} onSort={onSort}
+      />
+      <Section
+        title="Admins & Supervisors"
+        rows={groups.adm}
+        busy={busy}
+        onChangeRole={doRole}
+        onChangeStatus={doStatus}
+        onDelete={{ ask:askDelete, copy:onCopy }}
+        sort={cmp} orderBy={orderBy} order={order} onSort={onSort}
+      />
+      <Section
+        title="Users"
+        rows={groups.usr}
+        busy={busy}
+        onChangeRole={doRole}
+        onChangeStatus={doStatus}
+        onDelete={{ ask:askDelete, copy:onCopy }}
+        sort={cmp} orderBy={orderBy} order={order} onSort={onSort}
+      />
 
-      <Snackbar open={toast.open} autoHideDuration={2000} onClose={()=>setToast(v=>({...v,open:false}))}>
-        <Alert severity={toast.sev} variant="filled" sx={{ width: '100%' }}>{toast.msg}</Alert>
+      <Snackbar open={snack.open} autoHideDuration={2000} onClose={()=>setSnack(s=>({...s, open:false}))}>
+        <Alert severity={snack.sev} sx={{ width:'100%' }}>{snack.msg}</Alert>
       </Snackbar>
     </Container>
   );
