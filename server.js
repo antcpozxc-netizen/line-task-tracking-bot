@@ -1762,6 +1762,8 @@ app.get('/api/me', async (req, res) => {
 
 
 // ── Admin APIs
+// (เพิ่ม) รับพารามิเตอร์ status ส่งต่อไป Apps Script
+// แก้ของเดิม /api/admin/tasks เป็นแบบนี้:
 app.get('/api/admin/tasks',
   requireAuth,
   requireRole(['admin','supervisor','developer']),
@@ -1769,14 +1771,89 @@ app.get('/api/admin/tasks',
     try{
       const assignee_id   = String(req.query.assignee_id || '');
       const assignee_name = String(req.query.assignee_name || '');
+      const status        = String(req.query.status || ''); // << เพิ่ม
       const payload = {};
       if (assignee_id) payload.assignee_id = assignee_id;
       if (!assignee_id && assignee_name) payload.assignee_name = assignee_name;
+      if (status) payload.status = status;                   // << เพิ่ม
+
       const r = await callAppsScript('list_tasks', payload);
       res.json({ ok:true, tasks:r.tasks||[] });
     }catch(e){ console.error('TASKS_ADMIN_ERR',e); res.status(500).json({ok:false}); }
   }
 );
+
+// (ใหม่) อัปเดตสถานะงาน
+// (ใหม่) อัปเดตสถานะงาน
+app.post('/api/admin/tasks/status',
+  express.json(),
+  requireAuth,
+  requireRole(['admin','supervisor','developer']),
+  async (req, res) => {
+    try {
+      const { task_id, status } = req.body || {};
+      if (!task_id || !status) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
+      await callAppsScript('update_task_status', { task_id, status });
+      res.json({ ok:true });
+    } catch (e) {
+      console.error('TASK_SET_STATUS_ERR', e);
+      res.status(500).json({ ok:false });
+    }
+  }
+);
+
+
+// ── Users admin APIs
+app.get('/api/admin/users',
+  requireAuth,
+  requireRole(['admin','supervisor','developer']),
+  async (req, res) => {
+    try {
+      const r = await callAppsScript('list_users', {});
+      res.json({ ok: true, users: r.users || [] });
+    } catch (e) {
+      console.error('USERS_LIST_ERR', e);
+      res.status(500).json({ ok: false });
+    }
+  }
+);
+
+app.post('/api/admin/users/role',
+  express.json(),
+  requireAuth,
+  requireRole(['admin','supervisor','developer']),
+  async (req, res) => {
+    try {
+      const { user_id, role } = req.body || {};
+      if (!user_id || !role) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
+      await callAppsScript('set_user_role', { user_id, role });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error('USERS_SET_ROLE_ERR', e);
+      res.status(500).json({ ok: false });
+    }
+  }
+);
+
+app.post('/api/admin/users/status',
+  express.json(),
+  requireAuth,
+  requireRole(['admin','supervisor','developer']),
+  async (req, res) => {
+    try {
+      const { user_id, status } = req.body || {};
+      if (!user_id || !status) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
+      await callAppsScript('set_user_status', { user_id, status });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error('USERS_SET_STATUS_ERR', e);
+      res.status(500).json({ ok: false });
+    }
+  }
+);
+
+
+
 
 // Export CSV
 function csvEscape(v){ const s=String(v??''); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }
