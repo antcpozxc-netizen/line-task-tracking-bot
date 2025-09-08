@@ -1620,10 +1620,6 @@ app.get(/^\/(?!api|auth|webhook|healthz).*/, (_req, res) => {
 });
 
 
-app.get(/^\/(?!api|auth|webhook|healthz).*/, (_req,res)=>{
-  res.sendFile(path.join(distDir, 'index.html'));
-});
-
 // ── Simple session (ถ้าใช้เว็บ)
 const SESS_COOKIE='sess';
 function setSession(res, payload){

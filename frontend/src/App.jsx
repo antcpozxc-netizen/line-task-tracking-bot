@@ -12,6 +12,8 @@ import UsersAdminPage from './pages/UsersAdminPage';
 import AdminUsersSplitPage from './pages/AdminUsersSplitPage';
 import TasksPage from './pages/TasksPage';
 import HomePage from './pages/HomePage';
+import RequireAuth from './routes/RequireAuth';
+
 
 function AppShell({ children }) {
   return (
