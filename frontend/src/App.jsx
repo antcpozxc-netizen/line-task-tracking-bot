@@ -43,20 +43,18 @@ export default function App() {
       <CssBaseline />
       <BrowserRouter>
         <Routes>
-          {/* เริ่มที่ /login */}
           <Route path="/" element={<Navigate to="/login" replace />} />
-
-          {/* หน้า Login เปิดเสมอ */}
           <Route path="/login" element={<AppShell><LoginPage /></AppShell>} />
 
-          {/* เพจที่ต้องล็อกอิน */}
-          <Route path="/app" element={<Protected><AppShell><HomePage /></AppShell></Protected>} />
-          <Route path="/onboarding" element={<Protected><AppShell><OnboardingPage /></AppShell></Protected>} />
-          <Route path="/admin/users" element={<Protected><AppShell><UsersAdminPage /></AppShell></Protected>} />
-          <Route path="/admin/users-split" element={<Protected><AppShell><AdminUsersSplitPage /></AppShell></Protected>} />
-          <Route path="/tasks" element={<Protected><AppShell><TasksPage /></AppShell></Protected>} />
+          {/* ต้องล็อกอิน */}
+          <Route element={<RequireAuth />}>
+            <Route path="/onboarding" element={<AppShell><OnboardingPage /></AppShell>} />
+            <Route path="/admin/users" element={<AppShell><UsersAdminPage /></AppShell>} />
+            <Route path="/admin/users-split" element={<AppShell><AdminUsersSplitPage /></AppShell>} />
+            <Route path="/tasks" element={<AppShell><TasksPage /></AppShell>} />
+            <Route path="/app" element={<AppShell><HomePage /></AppShell>} />
+          </Route>
 
-          {/* ไม่ตรง route → กลับไป login */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>

@@ -1600,17 +1600,22 @@ app.post('/api/cron/reset-richmenu', async (req, res) => {
 
 
 
-
-// ── Static (ถ้าคุณมี frontend/dist)
+// ── Static
 const distDir = path.join(__dirname, 'frontend', 'dist');
-app.use(express.static(distDir));
 
-
-// server.js (วางไว้เหนือ block ที่มี app.get(/^\/(?!api|auth|webhook|healthz).*/, ...))
+// 1) Guard เฉพาะ path ที่ต้องล็อกอิน (มาก่อน static!)
 const mustLoginPaths = ['/app', '/tasks', '/onboarding', '/admin', '/admin/users', '/admin/users-split'];
 app.get(mustLoginPaths, (req, res) => {
   const s = readSession(req);
-  if (!s) return res.redirect('/login');    // ยังไม่มี sess → ไปหน้า login
+  if (!s) return res.redirect('/login'); // ยังไม่มี sess → ไปหน้า login
+  return res.sendFile(path.join(distDir, 'index.html'));
+});
+
+// 2) Serve static
+app.use(express.static(distDir));
+
+// 3) Catch-all ของหน้าเว็บ (อย่าอยู่ก่อนข้อ 1)
+app.get(/^\/(?!api|auth|webhook|healthz).*/, (_req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 
@@ -1745,11 +1750,21 @@ app.post('/auth/logout', (req, res) => {
 });
 
 // endpoint เล็ก ๆ เช็คว่า login แล้วหรือยัง
-app.get('/api/me', (req, res) => {
+app.get('/api/me', async (req, res) => {
   const s = readSession(req);
   if (!s) return res.status(401).json({ ok: false });
-  res.json({ ok: true, uid: s.uid, name: s.name });
+
+  // เพิ่มส่วนนี้เพื่อดึง role จาก Google Sheet
+  try {
+    const r = await callAppsScript('get_user', { user_id: s.uid });
+    const user = r.user || null; // { role, real_name, ... }
+    return res.json({ ok: true, session: s, user });
+  } catch (e) {
+    console.error('ME_APPS_ERR', e);
+    return res.json({ ok: true, session: s }); // fallback ถ้าเรียก Apps Script fail
+  }
 });
+
 // ========================================================================
 
 
