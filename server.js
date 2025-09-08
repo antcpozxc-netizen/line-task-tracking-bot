@@ -57,6 +57,7 @@ function urlQuery(obj) {
   Object.entries(obj || {}).forEach(([k,v]) => q.append(k, String(v)));
   return q.toString();
 }
+
 function signHmacSHA256(secret, raw) {
   return crypto.createHmac('sha256', secret).update(raw).digest('base64');
 }
@@ -91,6 +92,8 @@ function isRoleWord(w){
   ]);
   return set.has(String(w||'').trim().toLowerCase());
 }
+
+
 
 
 
@@ -1594,6 +1597,10 @@ app.post('/api/cron/reset-richmenu', async (req, res) => {
 });
 
 
+
+
+
+
 // ── Static (ถ้าคุณมี frontend/dist)
 const distDir = path.join(__dirname, 'frontend', 'dist');
 app.use(express.static(distDir));
@@ -1620,80 +1627,79 @@ function requireRole(roles){ return async (req,res,next)=>{ try{
   if (!roles.includes(my)) return res.status(403).send('Forbidden'); next();
 } catch(e){ console.error('ROLE_ERR',e); res.status(500).send('Error'); }}};
 
-// ── LINE Login (web)
-app.get('/auth/line/start', (req,res)=>{
-  if (!LINE_LOGIN_CHANNEL_ID || !LINE_LOGIN_CALLBACK_URL) {
-    return res.status(500).send('LINE Login is not configured');
-  }
+
+
+// === [LINE LOGIN: routes] ================================================
+// GET /auth/line  → redirect ไป LINE OAuth
+app.get('/auth/line', (req, res) => {
   const state = crypto.randomBytes(8).toString('hex');
-  res.setHeader('Set-Cookie', cookie.serialize('oa_state', state, {
-    path:'/', httpOnly:true, sameSite:'lax', secure:true, maxAge: 300
-  }));
-  const authUrl = 'https://access.line.me/oauth2/v2.1/authorize?' + urlQuery({
-    response_type:'code',
+  const nonce = crypto.randomBytes(8).toString('hex');
+  const params = new URLSearchParams({
+    response_type: 'code',
     client_id: LINE_LOGIN_CHANNEL_ID,
     redirect_uri: LINE_LOGIN_CALLBACK_URL,
     state,
-    scope: 'profile openid'
+    scope: 'profile openid',
+    nonce,
+    prompt: 'consent'
   });
-  res.redirect(authUrl);
+  res.redirect('https://access.line.me/oauth2/v2.1/authorize?' + params.toString());
 });
 
-app.get('/auth/line/callback', async (req,res)=>{
-  try{
-    const { code, state } = req.query || {};
-    const c = cookie.parse(req.headers.cookie||''); 
-    if (!code || !state || !c.oa_state || c.oa_state !== state) {
-      return res.status(400).send('Invalid state');
-    }
+// GET /auth/line/callback  → รับ code แล้วแลก token
+app.get('/auth/line/callback', async (req, res) => {
+  try {
+    const code = String(req.query.code || '');
+    if (!code) return res.status(400).send('Missing code');
 
-    // exchange token
+    // แลกเป็น access_token
     const tokenRes = await fetchFn('https://api.line.me/oauth2/v2.1/token', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
-      body: urlQuery({
-        grant_type:'authorization_code',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
         code,
         redirect_uri: LINE_LOGIN_CALLBACK_URL,
         client_id: LINE_LOGIN_CHANNEL_ID,
         client_secret: LINE_LOGIN_CHANNEL_SECRET
       })
     });
-    if (!tokenRes.ok) return res.status(400).send('Token exchange failed');
-    const token = await tokenRes.json();
+    if (!tokenRes.ok) {
+      const txt = await tokenRes.text().catch(()=> '');
+      console.error('LINE_LOGIN_TOKEN_ERR', tokenRes.status, txt);
+      return res.status(401).send('Token exchange failed');
+    }
+    const tokenJson = await tokenRes.json();
+    const accessToken = tokenJson.access_token;
 
-    // profile
-    const prof = await fetchLineProfile(token.access_token);
-    const uid  = prof.userId;
-    const real = prof.displayName || '';
+    // ขอโปรไฟล์ผู้ใช้จาก LINE
+    const prof = await fetchLineProfile(accessToken); // helper ที่มีอยู่แล้ว
+    // เก็บ session (ใช้ uid = userId จาก LINE)
+    setSession(res, { uid: prof.userId, name: prof.displayName || '' });
 
-    // upsert user (ถ้ามายังไม่อยู่ ให้ลงทะเบียนอัตโนมัติแบบเบื้องต้น role=user)
-    try{
-      const g = await callAppsScript('get_user', { user_id: uid });
-      if (!g.found) {
-        await callAppsScript('upsert_user', {
-          user_id: uid, username:'', real_name: real, role:'user', status:'Active'
-        });
-      }
-    }catch(_){}
-
-    // set session แล้วเข้าเว็บ
-    setSession(res, { uid });
+    // กลับหน้าเว็บหลัก
     res.redirect('/');
-  }catch(e){
+  } catch (e) {
     console.error('LINE_LOGIN_CB_ERR', e);
     res.status(500).send('Login failed');
   }
 });
 
-app.post('/auth/logout', (req,res)=>{
-  res.setHeader('Set-Cookie', cookie.serialize('sess','', {
-    path:'/', httpOnly:true, sameSite:'lax', secure:true, maxAge:0
+// ออกจากระบบ
+app.post('/auth/logout', (req, res) => {
+  res.setHeader('Set-Cookie', cookie.serialize('sess', '', {
+    path: '/', httpOnly: true, sameSite: 'none', secure: true, maxAge: 0
   }));
-  res.json({ ok:true });
+  res.json({ ok: true });
 });
 
-
+// endpoint เล็ก ๆ เช็คว่า login แล้วหรือยัง
+app.get('/api/me', (req, res) => {
+  const s = readSession(req);
+  if (!s) return res.status(401).json({ ok: false });
+  res.json({ ok: true, uid: s.uid, name: s.name });
+});
+// ========================================================================
 
 
 // ── Admin APIs
