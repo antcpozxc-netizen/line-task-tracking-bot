@@ -1647,11 +1647,14 @@ app.get('/auth/line', (req, res) => {
 });
 app.get('/auth/line/start', (req, res) => res.redirect('/auth/line'));
 
-// GET /auth/line/callback  → รับ code แล้วแลก token
+
+// GET /auth/line/callback  → รับ code แล้วแลก token (เพิ่ม log)
 app.get('/auth/line/callback', async (req, res) => {
   try {
-    const code = String(req.query.code || '');
+    const code  = String(req.query.code || '');
+    const state = String(req.query.state || '');
     if (!code) return res.status(400).send('Missing code');
+    console.log('[LOGIN] callback: got code, state=%s', state);
 
     // แลกเป็น access_token
     const tokenRes = await fetchFn('https://api.line.me/oauth2/v2.1/token', {
@@ -1666,25 +1669,53 @@ app.get('/auth/line/callback', async (req, res) => {
       })
     });
     if (!tokenRes.ok) {
-      const txt = await tokenRes.text().catch(()=> '');
-      console.error('LINE_LOGIN_TOKEN_ERR', tokenRes.status, txt);
+      const txt = await tokenRes.text().catch(() => '');
+      console.error('[LOGIN] TOKEN_ERR', tokenRes.status, String(txt).slice(0, 300));
       return res.status(401).send('Token exchange failed');
     }
     const tokenJson = await tokenRes.json();
     const accessToken = tokenJson.access_token;
 
-    // ขอโปรไฟล์ผู้ใช้จาก LINE
-    const prof = await fetchLineProfile(accessToken); // helper ที่มีอยู่แล้ว
-    // เก็บ session (ใช้ uid = userId จาก LINE)
-    setSession(res, { uid: prof.userId, name: prof.displayName || '' });
+    // ขอโปรไฟล์: ใช้ userinfo ก่อน ถ้า error ค่อย fallback ไป /v2/profile
+    let uid = '', display = '';
+    try {
+      const info = await fetchLoginUserInfo(accessToken);
+      uid     = info.sub || info.userId || '';
+      display = info.name || info.displayName || '';
+      console.log('[LOGIN] userinfo OK', { uid, name: display });
+    } catch (e1) {
+      console.error('[LOGIN] USERINFO_ERR', e1?.status || e1?.message || e1);
+      try {
+        const prof = await fetchLineProfile(accessToken);
+        uid     = prof.userId;
+        display = prof.displayName || '';
+        console.log('[LOGIN] profile OK', { uid, name: display });
+      } catch (e2) {
+        console.error('[LOGIN] PROFILE_ERR', e2?.status || e2?.message || e2);
+        return res.status(401).send('Get profile failed');
+      }
+    }
 
-    // กลับหน้าเว็บหลัก
+    // เก็บ session แล้วกลับหน้าเว็บ
+    setSession(res, { uid, name: display });
+    console.log('[LOGIN] success for', uid, display);
     res.redirect('/');
   } catch (e) {
     console.error('LINE_LOGIN_CB_ERR', e);
     res.status(500).send('Login failed');
   }
 });
+
+// ดึงโปรไฟล์จาก LINE Login (OIDC) – วางไว้ใกล้ๆ กับ fetchLineProfile ด้านบนก็ได้
+async function fetchLoginUserInfo(accessToken) {
+  const r = await fetchFn('https://api.line.me/oauth2/v2.1/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!r.ok) throw new Error('GET_USERINFO_FAILED:' + r.status);
+  return r.json();
+}
+
+
 
 // ออกจากระบบ
 app.post('/auth/logout', (req, res) => {
