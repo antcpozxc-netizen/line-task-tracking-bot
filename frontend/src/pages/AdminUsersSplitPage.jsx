@@ -5,7 +5,14 @@ import {
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import useMe from '../hooks/useMe';
-import { listUsers, setUserRole, setUserStatus } from '../api/client';
+import DeleteIcon from '@mui/icons-material/Delete';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Button from '@mui/material/Button';
+import { deleteUser } from '../api/client';
+import { listUsers } from '../api/client';
 
 const ROLE_RANK = { user:1, supervisor:2, admin:3, developer:4 };
 
@@ -22,6 +29,7 @@ export default function AdminUsersSplitPage() {
 
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(null); // { user_id, name }
 
   const load = async () => {
     const j = await listUsers();            // { users: [...] }
@@ -42,16 +50,11 @@ export default function AdminUsersSplitPage() {
 
   const canEdit = (targetRole) => (ROLE_RANK[targetRole?.toLowerCase()] || 0) < myRank;
 
-  const save = async (u) => {
-    setBusy(true);
-    const roleSel = document.getElementById(`role-${u.user_id}`);
-    const statusSel = document.getElementById(`status-${u.user_id}`);
-    const newRole = roleSel?.value || u.role;
-    const newStatus = statusSel?.value || u.status;
-    await setUserRole(u.user_id, newRole);
-    await setUserStatus(u.user_id, newStatus);
+  const doDelete = async () => {
+    if (!confirm) return;
+    await deleteUser(confirm.user_id);
+    setConfirm(null);
     await load();
-    setBusy(false);
   };
 
   function TableBlock({ title, items }) {
@@ -100,9 +103,12 @@ export default function AdminUsersSplitPage() {
                     </TableCell>
                     <TableCell>{u.updated_at || ''}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title={editable ? 'บันทึก' : 'ห้ามแก้ผู้ใช้ระดับเท่ากัน/สูงกว่า'}>
+                      <Tooltip title={editable ? 'ลบผู้ใช้' : 'ห้ามลบผู้ใช้ระดับเท่ากัน/สูงกว่า'}>
                         <span>
-                          <IconButton onClick={()=>save(u)} disabled={!editable || busy}><SaveIcon /></IconButton>
+                          <IconButton color="error" disabled={!editable || busy}
+                            onClick={()=>setConfirm({ user_id: u.user_id, name: u.real_name || u.username || u.user_id })}>
+                            <DeleteIcon />
+                          </IconButton>
                         </span>
                       </Tooltip>
                     </TableCell>
@@ -116,6 +122,7 @@ export default function AdminUsersSplitPage() {
           </Table>
         </TableContainer>
       </Paper>
+      
     );
   }
 
@@ -125,6 +132,18 @@ export default function AdminUsersSplitPage() {
       <TableBlock title="Developers"     items={devRows} />
       <TableBlock title="Admins & Supervisors" items={mgrRows} />
       <TableBlock title="Users"          items={userRows} />
+      
+      <Dialog open={!!confirm} onClose={()=>setConfirm(null)}>
+        <DialogTitle>ยืนยันการลบผู้ใช้</DialogTitle>
+        <DialogContent>
+          ต้องการลบผู้ใช้ <b>{confirm?.name}</b> ใช่ไหม? (ระบบจะตั้งสถานะเป็น Inactive)
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={()=>setConfirm(null)}>ยกเลิก</Button>
+          <Button color="error" variant="contained" onClick={doDelete}>ลบ</Button>
+        </DialogActions>
+      </Dialog>
     </Container>
+    
   );
 }

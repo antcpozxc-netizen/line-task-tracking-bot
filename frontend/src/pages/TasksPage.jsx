@@ -8,6 +8,8 @@ import { listUsers, listTasks, updateTaskStatus } from '../api/client';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckIcon from '@mui/icons-material/Check';
+import TableSortLabel from '@mui/material/TableSortLabel';
+import { ListItemAvatar, Avatar } from '@mui/material';
 
 function parseDeadline(s) {
   if (!s) return null;
@@ -24,6 +26,20 @@ function StatusChip({ value }) {
   return <Chip size="small" label={v} color={color} />;
 }
 
+function cmp(a,b,by){
+  const A = (a?.[by] ?? '').toString(), B = (b?.[by] ?? '').toString();
+  if (by==='deadline') { // แปลงเป็น Date ก่อน
+    const da = parseDeadline(a.deadline), db = parseDeadline(b.deadline);
+    return (da?.getTime()||0) - (db?.getTime()||0);
+  }
+  if (by==='updated_date' || by==='updated_at' || by==='created_date') {
+    const da = new Date(a.updated_date || a.updated_at || a.created_date);
+    const db = new Date(b.updated_date || b.updated_at || b.created_date);
+    return (da?.getTime()||0) - (db?.getTime()||0);
+  }
+  return A.localeCompare(B, 'th');
+}
+
 export default function TasksPage() {
   const [users, setUsers] = useState([]);
   const [q, setQ] = useState('');
@@ -31,6 +47,8 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState([]);
   const [status, setStatus] = useState(''); // '', 'pending', 'doing', 'done'
   const [busy, setBusy] = useState(false);
+  const [orderBy, setOrderBy] = useState('updated_date');
+  const [order, setOrder] = useState('desc'); // 'asc' | 'desc'
 
   // โหลดผู้ใช้ทั้งหมดครั้งเดียว
   useEffect(() => { listUsers().then(j => setUsers(j.users || [])); }, []);
@@ -85,6 +103,17 @@ export default function TasksPage() {
     setBusy(false);
   };
 
+  const sortedTasks = useMemo(() => {
+    const arr = [...tasks];
+    arr.sort((a,b)=> (order==='asc'?1:-1) * cmp(a,b,orderBy));
+    return arr;
+  }, [tasks, order, orderBy]);
+
+  const onSort = (by) => {
+    if (orderBy===by) setOrder(order==='asc'?'desc':'asc');
+    else { setOrderBy(by); setOrder('asc'); }
+  };
+
   return (
     <Container sx={{ pb: 6 }}>
       <Typography variant="h5" fontWeight={800} sx={{ mb: 2, textAlign: 'center' }}>
@@ -108,11 +137,15 @@ export default function TasksPage() {
                   selected={activeUser?.user_id===u.user_id}
                   onClick={()=>setActiveUser(u)}
                 >
+                  <ListItemAvatar>
+                    <Avatar src={`/api/profile/${encodeURIComponent(u.user_id)}/photo`} />
+                  </ListItemAvatar>
                   <ListItemText
                     primary={u.real_name || u.username || u.user_id}
                     secondary={u.user_id}
                   />
                 </ListItemButton>
+
               ))}
             </List>
           </Paper>
@@ -147,17 +180,33 @@ export default function TasksPage() {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>task_id</TableCell>
-                  <TableCell>detail</TableCell>
+                  <TableCell sortDirection={orderBy==='task_id'?order:false}>
+                    <TableSortLabel active={orderBy==='task_id'} direction={orderBy==='task_id'?order:'asc'} onClick={()=>onSort('task_id')}>
+                      task_id
+                    </TableSortLabel>
+                  </TableCell>
+                  <TableCell sortDirection={orderBy==='detail'?order:false}>
+                    <TableSortLabel active={orderBy==='detail'} direction={orderBy==='detail'?order:'asc'} onClick={()=>onSort('detail')}>
+                      detail
+                    </TableSortLabel>
+                  </TableCell>
                   <TableCell>status</TableCell>
-                  <TableCell>deadline</TableCell>
+                  <TableCell sortDirection={orderBy==='deadline'?order:false}>
+                    <TableSortLabel active={orderBy==='deadline'} direction={orderBy==='deadline'?order:'asc'} onClick={()=>onSort('deadline')}>
+                      deadline
+                    </TableSortLabel>
+                  </TableCell>
                   <TableCell>note</TableCell>
-                  <TableCell>updated_date</TableCell>
+                  <TableCell sortDirection={orderBy==='updated_date'?order:false}>
+                    <TableSortLabel active={orderBy==='updated_date'} direction={orderBy==='updated_date'?order:'asc'} onClick={()=>onSort('updated_date')}>
+                      updated_date
+                    </TableSortLabel>
+                  </TableCell>
                   <TableCell align="right">action</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {tasks.map(t=>(
+                {sortedTasks.map(t=>(
                   <TableRow key={t.task_id || Math.random()} hover>
                     <TableCell>{t.task_id}</TableCell>
                     <TableCell>{t.task_detail || t.detail || ''}</TableCell>

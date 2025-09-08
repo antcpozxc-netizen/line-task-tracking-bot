@@ -9,8 +9,11 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import useMe from '../hooks/useMe';
 import { listUsers, setUserRole, setUserStatus } from '../api/client';
+import TableSortLabel from '@mui/material/TableSortLabel';
 
 const ROLE_RANK = { user: 1, supervisor: 2, admin: 3, developer: 4 };
+
+
 
 export default function UsersAdminPage() {
   const { loading, data } = useMe();
@@ -20,6 +23,17 @@ export default function UsersAdminPage() {
   const [q, setQ] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [orderBy, setOrderBy] = useState('updated_at');
+  const [order, setOrder] = useState('desc');
+  const onSort = (by)=>{ if (orderBy===by) setOrder(order==='asc'?'desc':'asc'); else { setOrderBy(by); setOrder('asc'); } };
+  const sortRows = (arr) => {
+    const cmp = (a,b,by)=>{
+      if (by==='updated_at') return String(a[by]||'').localeCompare(String(b[by]||''));
+      return String(a[by]||'').localeCompare(String(b[by]||''), 'th');
+    };
+    const out = [...arr].sort((a,b)=> (order==='asc'?1:-1) * cmp(a,b,orderBy));
+    return out;
+  };
 
   const load = async () => {
     const j = await listUsers();
@@ -104,12 +118,20 @@ export default function UsersAdminPage() {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>user_id</TableCell>
-                  <TableCell>username</TableCell>
-                  <TableCell>real_name</TableCell>
-                  <TableCell>role</TableCell>
-                  <TableCell>status</TableCell>
-                  <TableCell>updated_at</TableCell>
+                  {[
+                    ['user_id','user_id'],
+                    ['username','username'],
+                    ['real_name','real_name'],
+                    ['role','role'],
+                    ['status','status'],
+                    ['updated_at','updated_at'],
+                  ].map(([label, key])=>(
+                    <TableCell key={key} sortDirection={orderBy===key?order:false}>
+                      <TableSortLabel active={orderBy===key} direction={orderBy===key?order:'asc'} onClick={()=>onSort(key)}>
+                        {label}
+                      </TableSortLabel>
+                    </TableCell>
+                  ))}
                   <TableCell align="right" width={140}>action</TableCell>
                 </TableRow>
               </TableHead>

@@ -33,6 +33,10 @@ export const apiPost = (path, body) =>
     body: JSON.stringify(body || {}),
   });
 
+export const apiDelete = (path) => request(path, { method: 'DELETE' });
+export const deleteUser = (user_id) =>
+  apiDelete(`/api/admin/users/${encodeURIComponent(user_id)}`);
+
 // ------- small util -------
 function qs(obj = {}) {
   const q = new URLSearchParams();

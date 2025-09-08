@@ -1916,6 +1916,47 @@ app.get('/api/admin/tasks/export_link', async (req,res)=>{
   }catch(e){ console.error('CSV_EXPORT_LINK_ERR', e); res.status(500).json({ok:false}); }
 });
 
+// โปรไฟล์รูปจาก LINE (proxy)
+// GET /api/profile/:userId/photo
+app.get('/api/profile/:userId/photo', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const r = await fetch(`https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` }
+    });
+    if (!r.ok) return res.status(r.status).end();
+    const prof = await r.json();
+    if (!prof.pictureUrl) return res.status(404).end('no picture');
+
+    const img = await fetch(prof.pictureUrl);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Content-Type', img.headers.get('content-type') || 'image/jpeg');
+    const buf = Buffer.from(await img.arrayBuffer());
+    return res.end(buf);
+  } catch (e) {
+    console.error('PROFILE_PHOTO_ERR', e);
+    return res.status(500).end('error');
+  }
+});
+
+// ลบผู้ใช้ (soft delete → set Inactive) หรือเปลี่ยนเป็น callAppsScript('delete_user', {user_id})
+app.delete('/api/admin/users/:user_id',
+  requireAuth,
+  requireRole(['admin','supervisor','developer']),
+  async (req, res) => {
+    try {
+      const user_id = req.params.user_id;
+      await callAppsScript('set_user_status', { user_id, status: 'Inactive' });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error('USERS_DELETE_ERR', e);
+      res.status(500).json({ ok: false });
+    }
+  }
+);
+
+
+
 // ── Secure cron endpoint (ใช้กับ Render Cron Job)
 async function handleResetRichmenu(req, res) {
   try {
