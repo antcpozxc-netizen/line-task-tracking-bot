@@ -16,7 +16,8 @@ import DialogActions from '@mui/material/DialogActions';
 import useMe from '../hooks/useMe';
 import { listUsers, setUserRole, setUserStatus, deleteUser } from '../api/client';
 
-const ROLE_RANK = { user:1, supervisor:2, admin:3, developer:4 };
+// เดิม: { user:1, supervisor:2, admin:3, developer:4 }
+const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
 
 const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
@@ -65,12 +66,15 @@ export default function AdminUsersSplitPage() {
   const [order, setOrder] = useState('desc');
 
   // ให้ developer เห็น role เท่ากับตัวเองได้ (<=) ส่วนคนอื่นเห็นได้เฉพาะต่ำกว่า (<)
+
+  const ORDERED_ROLES = ['developer', 'supervisor', 'admin', 'user'];
   const roleChoices = useMemo(() => {
-    return Object.keys(ROLE_RANK).filter((r) => {
+    return ORDERED_ROLES.filter((r) => {
       const rk = ROLE_RANK[r] || 0;
       return myRole === 'developer' ? rk <= myRank : rk < myRank;
     });
   }, [myRole, myRank]);
+
 
   const load = async () => {
     setBusy(true);
@@ -101,17 +105,36 @@ export default function AdminUsersSplitPage() {
     return { devRows: dev, mgrRows: mgr, userRows: usr };
   }, [sorted]);
 
-  const canEdit = (targetRole) => (ROLE_RANK[targetRole?.toLowerCase()] || 0) < myRank;
+  const canEdit = (targetRole) =>
+    (ROLE_RANK[String(targetRole||'user')] || 0) < myRank;
+
+  const baseRoles = ['user','admin','supervisor','developer'];
+
+  const getAllowedRoles = (targetRole) => {
+    const target = String(targetRole || 'user');
+    const my = myRank;
+    let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r] || 0) <= my);
+    const targetRk = ROLE_RANK[target] || 0;
+    if (targetRk >= my) list = Array.from(new Set([target, ...list]));
+    return list;
+  };
 
   // ---- actions ----
   const doRole = async (u, role) => {
-    // กันหน้าเว็บ: เป้าหมายต้องต่ำกว่าเรา และ role ใหม่ก็ต้องต่ำกว่าเรา
     const targetRank = ROLE_RANK[String(u.role||'user').toLowerCase()] || 0;
     const newRank    = ROLE_RANK[String(role||'user').toLowerCase()] || 0;
-    if (targetRank >= myRank || newRank >= myRank) {
+
+    // ห้ามแก้ peer/สูงกว่า
+    if (targetRank >= myRank) {
       setSnack({ open:true, msg:'คุณไม่มีสิทธิ์เปลี่ยนสิทธิ์นี้', sev:'error' });
       return;
     }
+    // ทุก role ตั้งได้ ≤ ตัวเอง (เท่าตัวเองได้)
+    if (newRank > myRank) {
+      setSnack({ open:true, msg:'คุณไม่มีสิทธิ์เปลี่ยนสิทธิ์นี้', sev:'error' });
+      return;
+    }
+
     setBusy(true);
     try {
       await setUserRole(u.user_id, role);
@@ -119,9 +142,11 @@ export default function AdminUsersSplitPage() {
       await load();
     } catch {
       setSnack({ open:true, msg:'เปลี่ยนบทบาทไม่สำเร็จ', sev:'error' });
+    } finally {
       setBusy(false);
     }
   };
+
 
   const doStatus = async (u, status) => {
     setBusy(true);
@@ -222,13 +247,14 @@ export default function AdminUsersSplitPage() {
                         sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
                         onChange={(e)=>doRole(u, e.target.value)}
                       >
-                        {roleChoices.map(v => (
+                        {getAllowedRoles(r).map(v => (
                           <MenuItem key={v} value={v}>{v}</MenuItem>
                         ))}
                       </Select>
+
                       <Chip
                         size="small"
-                        sx={{ ml: 1, display: { xs: 'none', sm: 'inline-flex' } }} // ⬅︎ ซ่อนบน xs
+                        sx={{ ml: 1, display: { xs: 'none', sm: 'inline-flex' } }}
                         label={r}
                         color={roleColor(r)}
                       />

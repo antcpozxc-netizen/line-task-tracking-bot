@@ -135,7 +135,9 @@ async function callLineAPI(path, options={}){
   return await go(false);
 }
 
-const ROLE_RANK = { user:1, supervisor:2, admin:3, developer:4 };
+// เดิม: { user:1, supervisor:2, admin:3, developer:4 }
+const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
+
 
 // ฟังก์ชันอัปเดต role แบบทนทาน: ลองหลาย action เผื่อชื่อใน Apps Script ต่างกัน
 async function gsSetUserRole(user_id, role) {
@@ -1856,50 +1858,63 @@ app.get('/api/admin/users',
 // POST เปลี่ยน role
 app.post('/api/admin/users/role',
   requireAuth,
-  requireRole(['developer','admin','supervisor']),
+  requireRole(['developer','admin','supervisor']),  // คน 3 ระดับนี้เท่านั้นที่เปลี่ยนได้
   async (req, res) => {
     try {
       const { user_id, role } = req.body || {};
-      if (!user_id || !role) return res.status(400).json({ ok:false, error:'missing user_id or role' });
+      if (!user_id || !role) {
+        return res.status(400).json({ ok:false, error:'missing user_id or role' });
+      }
 
+      // ปกติให้ normalize ตั้งแต่ต้นก่อนนำไปเช็ก
       const r = String(role).toLowerCase();
-      if (!['developer','admin','supervisor','user'].includes(r)) {
+      const ALLOWED_ROLES = ['developer','supervisor','admin','user'];
+      if (!ALLOWED_ROLES.includes(r)) {
         return res.status(400).json({ ok:false, error:'invalid role' });
       }
 
       // สิทธิ์ของผู้เรียก
       const me   = await callAppsScript('get_user', { user_id: req.sess.uid });
-      const myRk = ROLE_RANK[String(me?.user?.role||'user').toLowerCase()] || 0;
+      const myRk = ROLE_RANK[String(me?.user?.role || 'user').toLowerCase()] || 0;
 
-      // สิทธิ์ของเป้าหมายตอนนี้
+      // สิทธิ์ของเป้าหมาย
       const tgt  = await callAppsScript('get_user', { user_id });
-      const tgtRk = ROLE_RANK[String(tgt?.user?.role||'user').toLowerCase()] || 0;
+      const tgtRk = ROLE_RANK[String(tgt?.user?.role || 'user').toLowerCase()] || 0;
 
-      // role ใหม่ที่อยากตั้ง
+      // ระดับของ role ใหม่
       const newRk = ROLE_RANK[r] || 0;
 
+      // ห้ามแก้คนที่ระดับ "เท่ากัน/สูงกว่า" ตัวเอง
       if (tgtRk >= myRk) {
-        // ยังกันไม่ให้แก้ 'peer หรือสูงกว่า' เสมอ (dev แก้ dev คนอื่นก็ไม่ให้)
         return res.status(403).json({ ok:false, error:'CANNOT_EDIT_PEER_OR_HIGHER' });
       }
-      const canSetEqual = (myRk === ROLE_RANK.developer); // อนุญาต equal เฉพาะ developer
-      if (canSetEqual) {
-        // dev ตั้งค่าได้ถึงระดับ dev (เท่ากัน) แต่ไม่มีใครสูงกว่า dev อยู่แล้ว
-        if (newRk > myRk) {
-          return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER' });
-        }
-      } else {
-        // บทบาทอื่น ๆ ตั้งได้เฉพาะต่ำกว่า
-        if (newRk >= myRk) {
-          return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER_OR_EQUAL' });
-        }
+      // ทุก role ตั้งได้ ≤ ระดับตัวเอง (เท่าตัวเองได้) แต่ห้ามสูงกว่า
+      if (newRk > myRk) {
+        return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER' });
       }
 
+      // dev อนุญาตให้ตั้งค่าได้ถึงระดับ dev (<= ตัวเอง)
+      // บทบาทอื่น ๆ ตั้งค่าได้เฉพาะที่ "ต่ำกว่า" ตัวเองเท่านั้น
+      // const canSetEqual = (myRk === ROLE_RANK.developer);
+      // if (canSetEqual) {
+      //   if (newRk > myRk) {
+      //     return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER' });
+      //   }
+      // } else {
+      //   if (newRk >= myRk) {
+      //     return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER_OR_EQUAL' });
+      //   }
+      // }
+
+      // อัปเดต (ใช้ฟังก์ชันที่มีจริงในโปรเจกต์ของคุณ)
+      // ถ้าคุณไม่มี gsSetUserRole ให้ใช้ callAppsScript ตามนี้แทน
+      // const resp = await callAppsScript('set_user_role', { user_id, role: r });
       const resp = await gsSetUserRole(user_id, r);
-      return res.json({ ok: true, result: resp || null });
+
+      return res.json({ ok:true, result: resp || null });
     } catch (e) {
       console.error('SET_USER_ROLE_ERR', e?.message || e);
-      res.status(500).json({ ok:false, error:'SET_USER_ROLE_ERR' });
+      return res.status(500).json({ ok:false, error:'SET_USER_ROLE_ERR' });
     }
   }
 );
