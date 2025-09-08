@@ -1,16 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Box, Container, Typography, Grid, List, ListItemButton, ListItemText,
   Paper, Table, TableHead, TableRow, TableCell, TableBody, TextField,
-  Stack, Select, MenuItem, Chip, IconButton, Tooltip
+  Stack, Select, MenuItem, Chip, IconButton, Tooltip, TableContainer,
+  ListItemAvatar, Avatar, TableSortLabel, Snackbar, Alert
 } from '@mui/material';
-import { listUsers, listTasks, updateTaskStatus } from '../api/client';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckIcon from '@mui/icons-material/Check';
-import TableSortLabel from '@mui/material/TableSortLabel';
-import { ListItemAvatar, Avatar } from '@mui/material';
+import { listUsers, listTasks, updateTaskStatus } from '../api/client';
 
+// ---- utils ----
 function parseDeadline(s) {
   if (!s) return null;
   const m = String(s).trim().match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
@@ -26,17 +26,21 @@ function StatusChip({ value }) {
   return <Chip size="small" label={v} color={color} />;
 }
 
-function cmp(a,b,by){
-  const A = (a?.[by] ?? '').toString(), B = (b?.[by] ?? '').toString();
-  if (by==='deadline') { // แปลงเป็น Date ก่อน
-    const da = parseDeadline(a.deadline), db = parseDeadline(b.deadline);
-    return (da?.getTime()||0) - (db?.getTime()||0);
+// generic compare for all columns
+function cmp(a, b, by) {
+  const get = (o, k) => (o?.[k] ?? '');
+  if (by === 'deadline') {
+    const da = parseDeadline(get(a, 'deadline')), db = parseDeadline(get(b, 'deadline'));
+    return (da?.getTime() || 0) - (db?.getTime() || 0);
   }
-  if (by==='updated_date' || by==='updated_at' || by==='created_date') {
-    const da = new Date(a.updated_date || a.updated_at || a.created_date);
-    const db = new Date(b.updated_date || b.updated_at || b.created_date);
-    return (da?.getTime()||0) - (db?.getTime()||0);
+  if (by === 'updated_date' || by === 'updated_at' || by === 'created_date') {
+    const da = new Date(get(a, 'updated_date') || get(a, 'updated_at') || get(a, 'created_date'));
+    const db = new Date(get(b, 'updated_date') || get(b, 'updated_at') || get(b, 'created_date'));
+    return (da?.getTime() || 0) - (db?.getTime() || 0);
   }
+  // task_detail / detail / status / note / task_id
+  const A = (get(a, by) || get(a, 'task_' + by) || '').toString();
+  const B = (get(b, by) || get(b, 'task_' + by) || '').toString();
   return A.localeCompare(B, 'th');
 }
 
@@ -47,8 +51,14 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState([]);
   const [status, setStatus] = useState(''); // '', 'pending', 'doing', 'done'
   const [busy, setBusy] = useState(false);
+
+  // sorting
   const [orderBy, setOrderBy] = useState('updated_date');
   const [order, setOrder] = useState('desc'); // 'asc' | 'desc'
+
+  // feedback
+  const [snack, setSnack] = useState({ open:false, msg:'', sev:'success' });
+  const prevRef = useRef(null);
 
   // โหลดผู้ใช้ทั้งหมดครั้งเดียว
   useEffect(() => { listUsers().then(j => setUsers(j.users || [])); }, []);
@@ -66,12 +76,12 @@ export default function TasksPage() {
     );
   }, [users]);
 
-  // ✅ เลือกคนแรกให้อัตโนมัติทันทีที่มีข้อมูล (ไม่ต้องค้นหา)
+  // เลือกคนแรกให้อัตโนมัติทันทีที่มีข้อมูล
   useEffect(() => {
     if (!activeUser && userRows.length) setActiveUser(userRows[0]);
   }, [userRows, activeUser]);
 
-  // ถ้าไม่ได้พิมพ์ค้นหา => แสดง “ทั้งหมด”; ถ้าพิมพ์ค่อยกรอง
+  // ค้นหา
   const filteredUsers = useMemo(() => {
     if (!q) return userRows;
     const ql = q.toLowerCase().trim();
@@ -80,6 +90,7 @@ export default function TasksPage() {
     );
   }, [userRows, q]);
 
+  // โหลด tasks ของผู้ใช้/สถานะที่เลือก
   const load = async () => {
     if (!activeUser) return setTasks([]);
     const id = activeUser.user_id;
@@ -87,22 +98,33 @@ export default function TasksPage() {
     const j = await listTasks({ assignee_id: id, assignee_name: name, status });
     setTasks(j.tasks || []);
   };
-
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [activeUser, status]);
 
+  // นับสถานะ
   const counts = useMemo(() => {
     const c = { pending:0, doing:0, done:0 };
     for (const t of tasks) c[String(t.status || 'pending').toLowerCase()]++;
     return c;
   }, [tasks]);
 
+  // เปลี่ยนสถานะงาน — optimistic update
   const act = async (taskId, toStatus) => {
+    prevRef.current = tasks;
     setBusy(true);
-    await updateTaskStatus(taskId, toStatus);
-    await load();
-    setBusy(false);
+    setTasks(prev => prev.map(t => t.task_id === taskId ? { ...t, status: toStatus } : t));
+    try {
+      await updateTaskStatus(taskId, toStatus);
+      setSnack({ open:true, msg:'อัปเดตสำเร็จ', sev:'success' });
+      await load(); // sync ใหม่
+    } catch (e) {
+      setTasks(prevRef.current || []);
+      setSnack({ open:true, msg:'อัปเดตไม่สำเร็จ', sev:'error' });
+    } finally {
+      setBusy(false);
+    }
   };
 
+  // sort ทุกคอลัมน์
   const sortedTasks = useMemo(() => {
     const arr = [...tasks];
     arr.sort((a,b)=> (order==='asc'?1:-1) * cmp(a,b,orderBy));
@@ -121,7 +143,7 @@ export default function TasksPage() {
       </Typography>
 
       <Grid container spacing={2}>
-        {/* Left: รายชื่อผู้ใช้ role=user แสดงทั้งหมดตั้งแต่แรก */}
+        {/* Left: รายชื่อผู้ใช้ (role=user) */}
         <Grid item xs={12} md={3}>
           <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 3 }}>
             <TextField
@@ -130,7 +152,7 @@ export default function TasksPage() {
               value={q} onChange={(e)=>setQ(e.target.value)}
               sx={{ mb: 1 }}
             />
-            <List dense sx={{ maxHeight: 520, overflow: 'auto' }}>
+            <List dense sx={{ maxHeight: { xs: 360, md: 520 }, overflow: 'auto' }}>
               {filteredUsers.map(u=>(
                 <ListItemButton
                   key={u.user_id}
@@ -141,11 +163,12 @@ export default function TasksPage() {
                     <Avatar src={`/api/profile/${encodeURIComponent(u.user_id)}/photo`} />
                   </ListItemAvatar>
                   <ListItemText
+                    primaryTypographyProps={{ noWrap:true }}
+                    secondaryTypographyProps={{ noWrap:true }}
                     primary={u.real_name || u.username || u.user_id}
                     secondary={u.user_id}
                   />
                 </ListItemButton>
-
               ))}
             </List>
           </Paper>
@@ -153,10 +176,8 @@ export default function TasksPage() {
 
         {/* Right: ตารางงาน */}
         <Grid item xs={12} md={9}>
-          <Paper variant="outlined" sx={{ borderRadius: 3 }}>
-            <Box sx={{
-              px:2, py:1.5, display:'flex', alignItems:'center', gap:1, flexWrap:'wrap'
-            }}>
+          <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}>
+            <Box sx={{ px:2, py:1.5, display:'flex', alignItems:'center', gap:1, flexWrap:'wrap' }}>
               <Typography variant="subtitle1" fontWeight={700} sx={{ flexGrow:1 }}>
                 {activeUser ? `Tasks of ${activeUser.real_name || activeUser.username || activeUser.user_id}` : 'เลือกผู้ใช้จากด้านซ้าย'}
               </Typography>
@@ -177,75 +198,89 @@ export default function TasksPage() {
               <Chip size="small" color="success" label={`done: ${counts.done}`} />
             </Stack>
 
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sortDirection={orderBy==='task_id'?order:false}>
-                    <TableSortLabel active={orderBy==='task_id'} direction={orderBy==='task_id'?order:'asc'} onClick={()=>onSort('task_id')}>
-                      task_id
-                    </TableSortLabel>
-                  </TableCell>
-                  <TableCell sortDirection={orderBy==='detail'?order:false}>
-                    <TableSortLabel active={orderBy==='detail'} direction={orderBy==='detail'?order:'asc'} onClick={()=>onSort('detail')}>
-                      detail
-                    </TableSortLabel>
-                  </TableCell>
-                  <TableCell>status</TableCell>
-                  <TableCell sortDirection={orderBy==='deadline'?order:false}>
-                    <TableSortLabel active={orderBy==='deadline'} direction={orderBy==='deadline'?order:'asc'} onClick={()=>onSort('deadline')}>
-                      deadline
-                    </TableSortLabel>
-                  </TableCell>
-                  <TableCell>note</TableCell>
-                  <TableCell sortDirection={orderBy==='updated_date'?order:false}>
-                    <TableSortLabel active={orderBy==='updated_date'} direction={orderBy==='updated_date'?order:'asc'} onClick={()=>onSort('updated_date')}>
-                      updated_date
-                    </TableSortLabel>
-                  </TableCell>
-                  <TableCell align="right">action</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {sortedTasks.map(t=>(
-                  <TableRow key={t.task_id || Math.random()} hover>
-                    <TableCell>{t.task_id}</TableCell>
-                    <TableCell>{t.task_detail || t.detail || ''}</TableCell>
-                    <TableCell><StatusChip value={t.status} /></TableCell>
-                    <TableCell>{fmt(parseDeadline(t.deadline))}</TableCell>
-                    <TableCell>{t.note || ''}</TableCell>
-                    <TableCell>{fmt(new Date(t.updated_date || t.updated_at || t.created_date))}</TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                        <Tooltip title="กำลังทำ">
-                          <span>
-                            <IconButton size="small" onClick={()=>act(t.task_id, 'doing')} disabled={busy}>
-                              <PlayArrowIcon/>
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="เสร็จแล้ว">
-                          <span>
-                            <IconButton size="small" onClick={()=>act(t.task_id, 'done')} disabled={busy}>
-                              <CheckIcon/>
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {activeUser && tasks.length===0 && (
+            <TableContainer sx={{ maxHeight: { xs: 420, md: 560 } }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py:3, color:'text.secondary' }}>
-                      No tasks
-                    </TableCell>
+                    {[
+                      ['task_id', 'task_id', { nowrap:true }],
+                      ['detail', 'detail', {}],
+                      ['status', 'status', { nowrap:true }],
+                      ['deadline', 'deadline', { nowrap:true }],
+                      ['note', 'note', { hideXs:true }],
+                      ['updated_date', 'updated_date', { hideSm:true, nowrap:true }],
+                    ].map(([label, key, opt])=>(
+                      <TableCell
+                        key={key}
+                        sx={{
+                          whiteSpace: opt?.nowrap ? 'nowrap' : 'normal',
+                          display: opt?.hideXs ? { xs:'none', sm:'table-cell' } :
+                                   opt?.hideSm ? { xs:'none', md:'table-cell' } : 'table-cell'
+                        }}
+                        sortDirection={orderBy===key?order:false}
+                      >
+                        <TableSortLabel
+                          active={orderBy===key}
+                          direction={orderBy===key?order:'asc'}
+                          onClick={()=>onSort(key)}
+                        >
+                          {label}
+                        </TableSortLabel>
+                      </TableCell>
+                    ))}
+                    <TableCell align="right" sx={{ whiteSpace:'nowrap' }}>action</TableCell>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHead>
+
+                <TableBody>
+                  {sortedTasks.map(t=>(
+                    <TableRow key={t.task_id || Math.random()} hover>
+                      <TableCell sx={{ whiteSpace:'nowrap' }}>{t.task_id}</TableCell>
+                      <TableCell>{t.task_detail || t.detail || ''}</TableCell>
+                      <TableCell sx={{ whiteSpace:'nowrap' }}><StatusChip value={t.status} /></TableCell>
+                      <TableCell sx={{ whiteSpace:'nowrap' }}>{fmt(parseDeadline(t.deadline))}</TableCell>
+                      <TableCell sx={{ display:{ xs:'none', sm:'table-cell' } }}>{t.note || ''}</TableCell>
+                      <TableCell sx={{ display:{ xs:'none', md:'table-cell' } }}>
+                        {fmt(new Date(t.updated_date || t.updated_at || t.created_date))}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                          <Tooltip title="กำลังทำ">
+                            <span>
+                              <IconButton size="small" onClick={()=>act(t.task_id, 'doing')} disabled={busy}>
+                                <PlayArrowIcon/>
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title="เสร็จแล้ว">
+                            <span>
+                              <IconButton size="small" onClick={()=>act(t.task_id, 'done')} disabled={busy}>
+                                <CheckIcon/>
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+
+                  {activeUser && tasks.length===0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center" sx={{ py:3, color:'text.secondary' }}>
+                        No tasks
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Paper>
         </Grid>
       </Grid>
+
+      <Snackbar open={snack.open} autoHideDuration={2000} onClose={()=>setSnack(s=>({...s, open:false}))}>
+        <Alert severity={snack.sev} sx={{ width: '100%' }}>{snack.msg}</Alert>
+      </Snackbar>
     </Container>
   );
 }

@@ -1,196 +1,209 @@
-// src/pages/UsersAdminPage.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Box, Button, Card, CardContent, Chip, Container, Grid, MenuItem, Stack, TextField,
-  Typography, Table, TableHead, TableRow, TableCell, TableBody, IconButton, Tooltip
+  Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, Select, MenuItem, IconButton, Chip, Stack, Tooltip,
+  Snackbar, Alert, TableSortLabel
 } from '@mui/material';
-import SaveIcon from '@mui/icons-material/Save';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import DownloadIcon from '@mui/icons-material/Download';
-import useMe from '../hooks/useMe';
-import { listUsers, setUserRole, setUserStatus } from '../api/client';
-import TableSortLabel from '@mui/material/TableSortLabel';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import { listUsers, setUserRole, setUserStatus, deleteUser } from '../api/client';
 
-const ROLE_RANK = { user: 1, supervisor: 2, admin: 3, developer: 4 };
+const RoleBadge = ({ role }) => {
+  const r = String(role || 'user').toLowerCase();
+  const color = r==='developer' ? 'secondary' : (['admin','supervisor'].includes(r)?'primary':'default');
+  return <Chip size="small" label={r} color={color} />;
+};
 
+function cmp(a,b,by){
+  // สำหรับ sort ทุกคอลัมน์
+  if (by==='updated_at') {
+    return new Date(a.updated_at||0) - new Date(b.updated_at||0);
+  }
+  return String(a?.[by] ?? '').localeCompare(String(b?.[by] ?? ''), 'th');
+}
 
+function UsersTable({ title, rows, onChangeRole, onChangeStatus, onDelete }) {
+  const [orderBy, setOrderBy] = useState('username');
+  const [order, setOrder] = useState('asc');
 
-export default function UsersAdminPage() {
-  const { loading, data } = useMe();
-  const myRole = (data?.user?.role || '').toLowerCase();
+  const sorted = useMemo(()=>{
+    const arr = [...rows];
+    arr.sort((a,b) => (order==='asc'?1:-1) * cmp(a,b,orderBy));
+    return arr;
+  }, [rows, orderBy, order]);
 
-  const [all, setAll] = useState([]);
-  const [q, setQ] = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [orderBy, setOrderBy] = useState('updated_at');
-  const [order, setOrder] = useState('desc');
-  const onSort = (by)=>{ if (orderBy===by) setOrder(order==='asc'?'desc':'asc'); else { setOrderBy(by); setOrder('asc'); } };
-  const sortRows = (arr) => {
-    const cmp = (a,b,by)=>{
-      if (by==='updated_at') return String(a[by]||'').localeCompare(String(b[by]||''));
-      return String(a[by]||'').localeCompare(String(b[by]||''), 'th');
-    };
-    const out = [...arr].sort((a,b)=> (order==='asc'?1:-1) * cmp(a,b,orderBy));
-    return out;
+  const onSort = (by) => {
+    if (orderBy===by) setOrder(order==='asc'?'desc':'asc');
+    else { setOrderBy(by); setOrder('asc'); }
   };
+
+  return (
+    <Paper variant="outlined" sx={{ p:0, borderRadius:3, overflow:'hidden' }}>
+      <Box sx={{ px:2, py:1.5, fontWeight:700 }}>{title}</Box>
+      <TableContainer>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              {/* user_id คอลัมน์แคบ + copy */}
+              <TableCell sx={{ width:180, whiteSpace:'nowrap' }}>
+                <TableSortLabel active={orderBy==='user_id'} direction={orderBy==='user_id'?order:'asc'} onClick={()=>onSort('user_id')}>
+                  user_id
+                </TableSortLabel>
+              </TableCell>
+
+              <TableCell>
+                <TableSortLabel active={orderBy==='username'} direction={orderBy==='username'?order:'asc'} onClick={()=>onSort('username')}>
+                  username
+                </TableSortLabel>
+              </TableCell>
+
+              <TableCell>
+                <TableSortLabel active={orderBy==='real_name'} direction={orderBy==='real_name'?order:'asc'} onClick={()=>onSort('real_name')}>
+                  name
+                </TableSortLabel>
+              </TableCell>
+
+              <TableCell sx={{ width:170 }}>
+                <TableSortLabel active={orderBy==='role'} direction={orderBy==='role'?order:'asc'} onClick={()=>onSort('role')}>
+                  role
+                </TableSortLabel>
+              </TableCell>
+
+              <TableCell sx={{ width:160 }}>
+                <TableSortLabel active={orderBy==='status'} direction={orderBy==='status'?order:'asc'} onClick={()=>onSort('status')}>
+                  status
+                </TableSortLabel>
+              </TableCell>
+
+              <TableCell sx={{ width:220, display:{ xs:'none', md:'table-cell' } }}>
+                <TableSortLabel active={orderBy==='updated_at'} direction={orderBy==='updated_at'?order:'asc'} onClick={()=>onSort('updated_at')}>
+                  updated_at
+                </TableSortLabel>
+              </TableCell>
+
+              <TableCell align="right" sx={{ width:80 }}>action</TableCell>
+            </TableRow>
+          </TableHead>
+
+          <TableBody>
+            {sorted.map(u=>(
+              <TableRow key={u.user_id} hover>
+                <TableCell sx={{ maxWidth:180 }}>
+                  <Box sx={{ display:'flex', alignItems:'center', gap:0.5 }}>
+                    <Box sx={{
+                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1,
+                      fontFamily:'monospace'
+                    }}>
+                      {u.user_id}
+                    </Box>
+                    <Tooltip title="คัดลอก">
+                      <IconButton size="small" onClick={()=>navigator.clipboard.writeText(u.user_id)}>
+                        <ContentCopyIcon fontSize="inherit" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </TableCell>
+
+                <TableCell sx={{minWidth:140}}>{u.username}</TableCell>
+                <TableCell sx={{minWidth:160}}>{u.real_name || '-'}</TableCell>
+
+                <TableCell>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Select
+                      size="small"
+                      value={String(u.role||'user').toLowerCase()}
+                      onChange={(e)=>onChangeRole(u.user_id, e.target.value)}
+                      sx={{ minWidth:130 }}
+                    >
+                      <MenuItem value="developer">developer</MenuItem>
+                      <MenuItem value="admin">admin</MenuItem>
+                      <MenuItem value="supervisor">supervisor</MenuItem>
+                      <MenuItem value="user">user</MenuItem>
+                    </Select>
+                    <RoleBadge role={u.role}/>
+                  </Stack>
+                </TableCell>
+
+                <TableCell>
+                  <Select
+                    size="small"
+                    value={u.status || 'Active'}
+                    onChange={(e)=>onChangeStatus(u.user_id, e.target.value)}
+                    sx={{ minWidth:120 }}
+                  >
+                    <MenuItem value="Active">Active</MenuItem>
+                    <MenuItem value="Inactive">Inactive</MenuItem>
+                  </Select>
+                </TableCell>
+
+                <TableCell sx={{ display:{ xs:'none', md:'table-cell' } }}>
+                  {u.updated_at || ''}
+                </TableCell>
+
+                <TableCell align="right">
+                  <Tooltip title="ลบ (ตั้งสถานะเป็น Inactive)">
+                    <span>
+                      <IconButton color="error" onClick={()=>onDelete(u)}><DeleteOutlineIcon/></IconButton>
+                    </span>
+                  </Tooltip>
+                </TableCell>
+              </TableRow>
+            ))}
+            {sorted.length===0 && (
+              <TableRow><TableCell colSpan={7} align="center" sx={{ py:3, color:'text.secondary' }}>No users</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Paper>
+  );
+}
+
+export default function UsersAdminPage(){
+  const [all, setAll]   = useState([]);
+  const [toast, setToast] = useState({ open:false, msg:'', sev:'success' });
 
   const load = async () => {
     const j = await listUsers();
     setAll(j.users || []);
   };
+  useEffect(()=>{ load(); },[]);
 
-  useEffect(() => { load().catch(console.error); }, []);
+  const devs  = useMemo(()=> all.filter(u => String(u.role||'').toLowerCase()==='developer'), [all]);
+  const leads = useMemo(()=> all.filter(u => ['admin','supervisor'].includes(String(u.role||'').toLowerCase())), [all]);
+  const users = useMemo(()=> all.filter(u => !['admin','supervisor','developer'].includes(String(u.role||'').toLowerCase())), [all]);
 
-  const rows = useMemo(() => {
-    const filtered = all.filter(u => {
-      const text = `${u.user_id||''} ${u.username||''} ${u.real_name||''}`.toLowerCase();
-      const hitQ = !q || text.includes(q.toLowerCase().trim());
-      const hitRole = !roleFilter || String(u.role||'').toLowerCase() === roleFilter;
-      const hitStatus = !statusFilter || String(u.status||'') === statusFilter;
-      return hitQ && hitRole && hitStatus;
-    });
-    // sort: role rank สูงก่อน, จากนั้น updated_at ใหม่ก่อน
-    return filtered.sort((a, b) => {
-      const ra = ROLE_RANK[(String(a.role||'').toLowerCase())] || 0;
-      const rb = ROLE_RANK[(String(b.role||'').toLowerCase())] || 0;
-      if (rb !== ra) return rb - ra;
-      return String(b.updated_at||'').localeCompare(String(a.updated_at||''));
-    });
-  }, [all, q, roleFilter, statusFilter]);
+  const ok = (msg)=> setToast({open:true,msg,sev:'success'});
+  const err= (msg)=> setToast({open:true,msg,sev:'error'});
 
-  const canEditTarget = (targetRole) => {
-    const rTarget = ROLE_RANK[(targetRole||'').toLowerCase()] || 0;
-    const rMe = ROLE_RANK[(myRole||'').toLowerCase()] || 0;
-    // ปิดแก้ไขถ้าเป้าหมาย "ระดับเท่ากันหรือสูงกว่า" ตัวเรา
-    return rMe > rTarget;
+  const onChangeRole = async (user_id, role) => {
+    try { await setUserRole(user_id, role); ok('เปลี่ยนบทบาทแล้ว'); await load(); }
+    catch { err('เปลี่ยนบทบาทไม่สำเร็จ'); }
   };
-
-  const saveRow = async (u) => {
-    const roleSel = document.getElementById(`role-${u.user_id}`);
-    const statusSel = document.getElementById(`status-${u.user_id}`);
-    const newRole = roleSel?.value || u.role;
-    const newStatus = statusSel?.value || u.status;
-
-    await setUserRole(u.user_id, newRole);
-    await setUserStatus(u.user_id, newStatus);
-    await load();
+  const onChangeStatus = async (user_id, status) => {
+    try { await setUserStatus(user_id, status); ok('อัปเดตสถานะแล้ว'); await load(); }
+    catch { err('อัปเดตสถานะไม่สำเร็จ'); }
   };
-
-  const exportCsv = () => {
-    const header = ['user_id','username','real_name','role','status','updated_at'];
-    const lines = rows.map(r => header.map(h => `"${String(r[h] ?? '').replace(/"/g,'""')}"`).join(','));
-    const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'users.csv'; a.click();
+  const onDelete = async (u) => {
+    const go = window.confirm(`ยืนยันการลบผู้ใช้ ${u.real_name || u.username}? (ระบบจะตั้งเป็น Inactive)`);
+    if (!go) return;
+    try { await deleteUser(u.user_id); ok('ลบผู้ใช้แล้ว'); await load(); }
+    catch { err('ลบผู้ใช้ไม่สำเร็จ'); }
   };
-
-  if (loading) return null;
 
   return (
-      <Container maxWidth="lg">
-        <Typography variant="h4" sx={{ color: 'white', mb: 2 }}>Users Admin</Typography>
+    <Container sx={{ pb:6 }}>
+      <Typography variant="h5" fontWeight={800} sx={{ mb:2 }}>Administrator management</Typography>
 
-        <Card elevation={8} sx={{ borderRadius: 4 }}>
-          <CardContent>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="stretch" sx={{ mb: 2 }}>
-              <TextField label="ค้นหา (id / username / name)" value={q} onChange={e=>setQ(e.target.value)} fullWidth />
-              <TextField select label="Role" value={roleFilter} onChange={e=>setRoleFilter(e.target.value)} sx={{ minWidth: 160 }}>
-                <MenuItem value="">ทั้งหมด</MenuItem>
-                {['user','supervisor','admin','developer'].map(r => <MenuItem key={r} value={r}>{r}</MenuItem>)}
-              </TextField>
-              <TextField select label="สถานะ" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} sx={{ minWidth: 160 }}>
-                <MenuItem value="">ทั้งหมด</MenuItem>
-                <MenuItem value="Active">Active</MenuItem>
-                <MenuItem value="Inactive">Inactive</MenuItem>
-              </TextField>
+      <Stack spacing={2}>
+        <UsersTable title="Developers" rows={devs}  onChangeRole={onChangeRole} onChangeStatus={onChangeStatus} onDelete={onDelete} />
+        <UsersTable title="Admins & Supervisors" rows={leads} onChangeRole={onChangeRole} onChangeStatus={onChangeStatus} onDelete={onDelete} />
+        <UsersTable title="Users" rows={users} onChangeRole={onChangeRole} onChangeStatus={onChangeStatus} onDelete={onDelete} />
+      </Stack>
 
-              <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
-                <Tooltip title="รีเฟรช">
-                  <IconButton onClick={load}><RefreshIcon /></IconButton>
-                </Tooltip>
-                <Tooltip title="ส่งออก CSV">
-                  <IconButton onClick={exportCsv}><DownloadIcon /></IconButton>
-                </Tooltip>
-              </Stack>
-            </Stack>
-
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  {[
-                    ['user_id','user_id'],
-                    ['username','username'],
-                    ['real_name','real_name'],
-                    ['role','role'],
-                    ['status','status'],
-                    ['updated_at','updated_at'],
-                  ].map(([label, key])=>(
-                    <TableCell key={key} sortDirection={orderBy===key?order:false}>
-                      <TableSortLabel active={orderBy===key} direction={orderBy===key?order:'asc'} onClick={()=>onSort(key)}>
-                        {label}
-                      </TableSortLabel>
-                    </TableCell>
-                  ))}
-                  <TableCell align="right" width={140}>action</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {rows.map((u) => {
-                  const editable = canEditTarget(u.role);
-                  return (
-                    <TableRow key={u.user_id} hover>
-                      <TableCell>{u.user_id}</TableCell>
-                      <TableCell>{u.username}</TableCell>
-                      <TableCell>{u.real_name}</TableCell>
-                      <TableCell>
-                        <TextField
-                          id={`role-${u.user_id}`}
-                          select
-                          size="small"
-                          defaultValue={u.role || 'user'}
-                          disabled={!editable}
-                          sx={{ minWidth: 150 }}
-                        >
-                          {['user','supervisor','admin','developer'].map(r => <MenuItem key={r} value={r}>{r}</MenuItem>)}
-                        </TextField>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={u.status === 'Active' ? 'Active' : 'Inactive'}
-                          color={u.status === 'Active' ? 'success' : 'error'}
-                          size="small"
-                          sx={{ mr: 1 }}
-                        />
-                        <TextField
-                          id={`status-${u.user_id}`}
-                          select
-                          size="small"
-                          defaultValue={u.status || 'Active'}
-                          disabled={!editable}
-                          sx={{ minWidth: 140 }}
-                        >
-                          <MenuItem value="Active">Active</MenuItem>
-                          <MenuItem value="Inactive">Inactive</MenuItem>
-                        </TextField>
-                      </TableCell>
-                      <TableCell>{u.updated_at || ''}</TableCell>
-                      <TableCell align="right">
-                        <Tooltip title={editable ? 'บันทึก' : 'ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า'}>
-                          <span>
-                            <IconButton color="primary" disabled={!editable} onClick={() => saveRow(u)}>
-                              <SaveIcon />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </Container>
+      <Snackbar open={toast.open} autoHideDuration={2000} onClose={()=>setToast(v=>({...v,open:false}))}>
+        <Alert severity={toast.sev} variant="filled" sx={{ width: '100%' }}>{toast.msg}</Alert>
+      </Snackbar>
+    </Container>
   );
 }

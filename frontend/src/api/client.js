@@ -33,10 +33,6 @@ export const apiPost = (path, body) =>
     body: JSON.stringify(body || {}),
   });
 
-export const apiDelete = (path) => request(path, { method: 'DELETE' });
-export const deleteUser = (user_id) =>
-  apiDelete(`/api/admin/users/${encodeURIComponent(user_id)}`);
-
 // ------- small util -------
 function qs(obj = {}) {
   const q = new URLSearchParams();
@@ -51,25 +47,29 @@ function qs(obj = {}) {
 
 // session / me
 export const fetchMe        = () => apiGet('/api/me');
-export const postOnboarding = (payload) => apiPost('/api/onboarding', payload); // มี endpoint นี้ใน server แล้วเท่านั้น
+export const postOnboarding = (payload) => apiPost('/api/onboarding', payload); // ใช้เมื่อมี endpoint นี้ใน server
 
 // ---- Admin – Users (match server.js) ----
-// GET /api/admin/users
 export const listUsers = () => apiGet('/api/admin/users');
 
-// POST /api/admin/users/role { user_id, role }
+// เปลี่ยนบทบาทผู้ใช้  (POST /api/admin/users/role  body: { user_id, role })
 export const setUserRole = (user_id, role) =>
   apiPost('/api/admin/users/role', { user_id, role });
 
-// POST /api/admin/users/status { user_id, status }
+// เปลี่ยนสถานะผู้ใช้  (POST /api/admin/users/status  body: { user_id, status })
 export const setUserStatus = (user_id, status) =>
   apiPost('/api/admin/users/status', { user_id, status });
 
-// ---- Tasks (match server.js) ----
-// GET /api/admin/tasks?assignee_id=&assignee_name=&status=
-export const listTasks = (opts = {}) => apiGet('/api/admin/tasks' + qs(opts));
+// ลบผู้ใช้ (soft delete → Inactive)  (DELETE /api/admin/users/:user_id)
+export const deleteUser = (user_id) =>
+  apiDelete(`/api/admin/users/${encodeURIComponent(user_id)}`);
 
-// POST /api/admin/tasks/status { task_id, status }
+// ---- Tasks (match server.js) ----
+// ดึงงาน (GET /api/admin/tasks?assignee_id=&assignee_name=&status=)
+export const listTasks = (opts = {}) =>
+  apiGet('/api/admin/tasks' + qs(opts));
+
+// เปลี่ยนสถานะงาน (POST /api/admin/tasks/status  body: { task_id, status })
 export const updateTaskStatus = (task_id, status) =>
   apiPost('/api/admin/tasks/status', { task_id, status });
 

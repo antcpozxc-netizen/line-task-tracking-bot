@@ -1918,18 +1918,22 @@ app.get('/api/admin/tasks/export_link', async (req,res)=>{
 
 // โปรไฟล์รูปจาก LINE (proxy)
 // GET /api/profile/:userId/photo
+// โปรไฟล์รูปจาก LINE (proxy) — ใช้ token ที่แน่นอนเสมอ
 app.get('/api/profile/:userId/photo', async (req, res) => {
   try {
     const userId = req.params.userId;
-    const r = await fetch(`https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`, {
-      headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` }
+
+    // เรียก LINE ด้วย helper ที่รีเฟรช access token ให้
+    const r = await callLineAPI(`/v2/bot/profile/${encodeURIComponent(userId)}`, {
+      method: 'GET'
     });
     if (!r.ok) return res.status(r.status).end();
     const prof = await r.json();
     if (!prof.pictureUrl) return res.status(404).end('no picture');
 
-    const img = await fetch(prof.pictureUrl);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    // ดึงรูปจริงแล้ว proxy กลับ
+    const img = await fetchFn(prof.pictureUrl);
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // cache 1 วัน
     res.setHeader('Content-Type', img.headers.get('content-type') || 'image/jpeg');
     const buf = Buffer.from(await img.arrayBuffer());
     return res.end(buf);
@@ -1938,6 +1942,7 @@ app.get('/api/profile/:userId/photo', async (req, res) => {
     return res.status(500).end('error');
   }
 });
+
 
 // ลบผู้ใช้ (soft delete → set Inactive) หรือเปลี่ยนเป็น callAppsScript('delete_user', {user_id})
 app.delete('/api/admin/users/:user_id',
