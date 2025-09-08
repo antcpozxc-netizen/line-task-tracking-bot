@@ -1699,7 +1699,7 @@ app.get('/auth/line/callback', async (req, res) => {
     // เก็บ session แล้วกลับหน้าเว็บ
     setSession(res, { uid, name: display });
     console.log('[LOGIN] success for', uid, display);
-    res.redirect('/');
+    res.redirect('/app');
   } catch (e) {
     console.error('LINE_LOGIN_CB_ERR', e);
     res.status(500).send('Login failed');

@@ -1,11 +1,22 @@
 // src/pages/LoginPage.jsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Box, Button, Card, CardContent, Container, Stack, Typography } from '@mui/material';
 import LoginIcon from '@mui/icons-material/Login';
+import { useNavigate } from 'react-router-dom';
+import useMe from '../hooks/useMe';
 
 export default function LoginPage() {
+  const me = useMe();
+  const navigate = useNavigate();
+
+  // ✅ ถ้า login แล้ว ไม่ให้ค้างอยู่หน้าล็อกอิน
+  useEffect(() => {
+    if (!me.loading && me.data?.ok) {
+      navigate('/app', { replace: true });
+    }
+  }, [me.loading, me.data, navigate]);
+
   const handleLogin = () => {
-    // ส่งไป backend ให้เริ่ม LINE Login
     window.location.href = '/auth/line/start';
   };
 

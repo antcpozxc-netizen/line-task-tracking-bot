@@ -29,7 +29,7 @@ export default function App() {
       <CssBaseline />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<Navigate to="/app" replace />} />
           <Route path="/login" element={<AppShell><LoginPage /></AppShell>} />
           <Route path="/onboarding" element={<AppShell><OnboardingPage /></AppShell>} />
           <Route path="/admin/users" element={<AppShell><UsersAdminPage /></AppShell>} />
