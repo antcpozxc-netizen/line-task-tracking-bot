@@ -1645,6 +1645,7 @@ app.get('/auth/line', (req, res) => {
   });
   res.redirect('https://access.line.me/oauth2/v2.1/authorize?' + params.toString());
 });
+app.get('/auth/line/start', (req, res) => res.redirect('/auth/line'));
 
 // GET /auth/line/callback  → รับ code แล้วแลก token
 app.get('/auth/line/callback', async (req, res) => {
