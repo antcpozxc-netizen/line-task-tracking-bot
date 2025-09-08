@@ -17,11 +17,6 @@ const assignPreset = new Map();
 
 // ── ENV
 const {
-  // LINE Login (เว็บ – ถ้าไม่ได้ใช้ หน้าเว็บก็ไม่มีผล)
-  LINE_LOGIN_CHANNEL_ID,
-  LINE_LOGIN_CHANNEL_SECRET,
-  LINE_LOGIN_CALLBACK_URL,
-
   // Messaging API
   LINE_CHANNEL_ID,
   LINE_CHANNEL_SECRET,
@@ -909,6 +904,35 @@ app.post('/webhook/line', async (req,res)=>{
         continue;
       }
 
+          // ===== Magic Link Login =====
+      if (/^(เข้าระบบ|เข้าสู่ระบบ|admin|dashboard)$/i.test(text)) {
+        try {
+          // 1) ตรวจ role จาก Google Sheet
+          const r = await callAppsScript('get_user', { user_id: userId });
+          const user = r.user || null;
+          const role = String(user?.role || '').toLowerCase();
+
+          // 2) อนุญาตเฉพาะ role
+          const allow = new Set(['developer', 'supervisor', 'admin']);
+          if (!allow.has(role)) {
+            await reply(ev.replyToken, 'ขออภัย สิทธิ์ของคุณยังไม่พอสำหรับเข้าใช้งานเว็บ');
+          } else {
+            // 3) ออก magic token อายุสั้น
+            const display = user?.real_name || user?.username || (await getDisplayName(userId)) || 'User';
+            const { token } = issueMagicToken({ uid: userId, name: display, role }, '10m');
+
+            const url = `${(PUBLIC_APP_URL || '').replace(/\/$/, '')}/auth/magic?t=${encodeURIComponent(token)}`;
+            await reply(ev.replyToken,
+              `ลิงก์เข้าระบบ (หมดอายุใน 10 นาที):\n${url}\n\nถ้าหมดอายุ พิมพ์ "เข้าระบบ" เพื่อขอลิงก์ใหม่`);
+          }
+        } catch (e) {
+          console.error('MAGIC_LINK_ERR', e?.message || e);
+          await reply(ev.replyToken, 'ออกลิงก์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+        }
+        continue; // จบเคสนี้
+      }
+
+
       // ลงทะเบียนจริง (พิมพ์สตริงลงทะเบียนแบบหลวม)
       {
         const p = parseRegister(text);
@@ -1597,6 +1621,37 @@ app.post('/api/cron/reset-richmenu', async (req, res) => {
 });
 
 
+// === Magic Link (One-time) ===
+const usedJTI = new Set();               // โปรดักชันควรใช้ Redis/DB แทน
+const TOKEN_TTL = '10m';                 // อายุ token (อ่านปรับได้)
+function issueMagicToken(payload, expires = TOKEN_TTL) {
+  const jti = crypto.randomBytes(16).toString('hex');
+  const token = jwt.sign({ ...payload, jti, scope: 'web-magic' }, APP_JWT_SECRET || 'secret', { expiresIn: expires });
+  return { token, jti };
+}
+
+// GET /auth/magic?t=<jwt> → ตั้ง session แล้วพาเข้า /app
+app.get('/auth/magic', (req, res) => {
+  try {
+    const t = String(req.query.t || '');
+    if (!t) return res.status(400).send('Missing token');
+
+    const decoded = jwt.verify(t, APP_JWT_SECRET || 'secret');
+    if (decoded.scope !== 'web-magic') return res.status(401).send('Invalid token');
+
+    // กันใช้ซ้ำ
+    if (usedJTI.has(decoded.jti)) return res.status(410).send('Token already used');
+    usedJTI.add(decoded.jti);
+
+    // ตั้ง session โดยใช้ Messaging API userId เป็น uid
+    setSession(res, { uid: decoded.uid, name: decoded.name || '' });
+
+    return res.redirect('/app');
+  } catch (e) {
+    console.error('AUTH_MAGIC_ERR', e?.message || e);
+    return res.status(401).send('Invalid or expired token');
+  }
+});
 
 
 
@@ -1607,9 +1662,13 @@ const distDir = path.join(__dirname, 'frontend', 'dist');
 const mustLoginPaths = ['/app', '/tasks', '/onboarding', '/admin', '/admin/users', '/admin/users-split'];
 app.get(mustLoginPaths, (req, res) => {
   const s = readSession(req);
-  if (!s) return res.redirect('/login'); // ยังไม่มี sess → ไปหน้า login
+  if (!s) {
+    // ถ้าไม่มี session → พาไป /app เลย
+    return res.redirect('/app');
+  }
   return res.sendFile(path.join(distDir, 'index.html'));
 });
+
 
 // 2) Serve static
 app.use(express.static(distDir));
@@ -1623,9 +1682,16 @@ app.get(/^\/(?!api|auth|webhook|healthz).*/, (_req, res) => {
 // ── Simple session (ถ้าใช้เว็บ)
 const SESS_COOKIE='sess';
 function setSession(res, payload){
-  const token = jwt.sign(payload, APP_JWT_SECRET||'secret', { expiresIn:'7d' });
+  // เดิม: { expiresIn:'7d' } → ปรับให้สั้นลง เช่น 2 ชั่วโมง
+  const token = jwt.sign(payload, APP_JWT_SECRET||'secret', { expiresIn: '2h' });
+
+  // ใส่ maxAge ให้ตรงกับอายุ JWT (2h = 7200 วินาที)
   res.setHeader('Set-Cookie', cookie.serialize(SESS_COOKIE, token, {
-    path:'/', httpOnly:true, sameSite:'none', secure:true
+    path: '/',
+    httpOnly: true,
+    sameSite: 'none',
+    secure: true,
+    maxAge: 7200,      // ← เพิ่มบรรทัดนี้
   }));
 }
 function readSession(req){
@@ -1638,103 +1704,6 @@ function requireRole(roles){ return async (req,res,next)=>{ try{
   const my = (r.user&&String(r.user.role||'').toLowerCase()) || 'user';
   if (!roles.includes(my)) return res.status(403).send('Forbidden'); next();
 } catch(e){ console.error('ROLE_ERR',e); res.status(500).send('Error'); }}};
-
-
-
-// === [LINE LOGIN: routes] ================================================
-// GET /auth/line  → redirect ไป LINE OAuth
-app.get('/auth/line', (req, res) => {
-  const state = crypto.randomBytes(8).toString('hex');
-  const nonce = crypto.randomBytes(8).toString('hex');
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: LINE_LOGIN_CHANNEL_ID,
-    redirect_uri: LINE_LOGIN_CALLBACK_URL,
-    state,
-    scope: 'profile openid',
-    nonce,
-    prompt: 'consent'
-  });
-  res.redirect('https://access.line.me/oauth2/v2.1/authorize?' + params.toString());
-});
-app.get('/auth/line/start', (req, res) => res.redirect('/auth/line'));
-
-
-// GET /auth/line/callback  → รับ code แล้วแลก token (เพิ่ม log)
-app.get('/auth/line/callback', async (req, res) => {
-  try {
-    const code  = String(req.query.code || '');
-    const state = String(req.query.state || '');
-    if (!code) return res.status(400).send('Missing code');
-    console.log('[LOGIN] callback: got code, state=%s', state);
-
-    // แลกเป็น access_token
-    const tokenRes = await fetchFn('https://api.line.me/oauth2/v2.1/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: LINE_LOGIN_CALLBACK_URL,
-        client_id: LINE_LOGIN_CHANNEL_ID,
-        client_secret: LINE_LOGIN_CHANNEL_SECRET
-      })
-    });
-    if (!tokenRes.ok) {
-      const txt = await tokenRes.text().catch(() => '');
-      console.error('[LOGIN] TOKEN_ERR', tokenRes.status, String(txt).slice(0, 300));
-      return res.status(401).send('Token exchange failed');
-    }
-    const tokenJson = await tokenRes.json();
-    const accessToken = tokenJson.access_token;
-
-    // ขอโปรไฟล์: ใช้ userinfo ก่อน ถ้า error ค่อย fallback ไป /v2/profile
-    let uid = '', display = '';
-    try {
-      const info = await fetchLoginUserInfo(accessToken);
-      uid     = info.sub || info.userId || '';
-      display = info.name || info.displayName || '';
-      console.log('[LOGIN] userinfo OK', { uid, name: display });
-    } catch (e1) {
-      console.error('[LOGIN] USERINFO_ERR', e1?.status || e1?.message || e1);
-      try {
-        const prof = await fetchLineProfile(accessToken);
-        uid     = prof.userId;
-        display = prof.displayName || '';
-        console.log('[LOGIN] profile OK', { uid, name: display });
-      } catch (e2) {
-        console.error('[LOGIN] PROFILE_ERR', e2?.status || e2?.message || e2);
-        return res.status(401).send('Get profile failed');
-      }
-    }
-
-    // เก็บ session แล้วกลับหน้าเว็บ
-    setSession(res, { uid, name: display });
-    console.log('[LOGIN] success for', uid, display);
-    res.redirect('/app');
-  } catch (e) {
-    console.error('LINE_LOGIN_CB_ERR', e);
-    res.status(500).send('Login failed');
-  }
-});
-
-// --- LINE Login helpers ---
-async function fetchLoginUserInfo(accessToken) {
-  const r = await fetchFn('https://api.line.me/oauth2/v2.1/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  if (!r.ok) throw new Error('GET_USERINFO_FAILED:' + r.status);
-  return r.json();  // { sub, name, picture, ... }
-}
-
-async function fetchLineProfile(accessToken) {
-  const r = await fetchFn('https://api.line.me/v2/profile', {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  if (!r.ok) throw new Error('GET_PROFILE_FAILED:' + r.status);
-  return r.json();  // { userId, displayName, ... }
-}
-
 
 
 // ออกจากระบบ
