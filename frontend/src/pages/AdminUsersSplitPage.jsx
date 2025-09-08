@@ -22,8 +22,10 @@ const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
   username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
   name:    { width:{ xs:'34%', md:'38%' }, maxWidth:480, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' },
-  role:    { width:{ xs:140, md:170 }, whiteSpace:'nowrap' },
-  status:  { width:{ xs:130, md:150 }, whiteSpace:'nowrap' },
+  role:    { width:{ xs:160, md:200 }, whiteSpace:'nowrap',
+            pr:{ xs:3, md:5 } },     // 👉 ระยะขวาของคอลัมน์ role
+  status:  { width:{ xs:150, md:180 }, whiteSpace:'nowrap',
+            pl:{ xs:2, md:3 } },     // 👉 ระยะซ้ายของคอลัมน์ status
   updated: { width:{ xs:0, md:220 }, display:{ xs:'none', md:'table-cell' }, whiteSpace:'nowrap' },
   action:  { width:{ xs:70, md:90 }, textAlign:'center', whiteSpace:'nowrap' },
 };
@@ -180,6 +182,7 @@ export default function AdminUsersSplitPage() {
                     <TableCell sx={colSx.name}>{u.real_name || '-'}</TableCell>
                     <TableCell sx={colSx.role}>
                       <Select size="small" value={r} disabled={!editable || busy}
+                        sx={{ minWidth: 132 }}  
                         onChange={(e)=>doRole(u, e.target.value)}>
                         <MenuItem value="user">user</MenuItem>
                         <MenuItem value="supervisor">supervisor</MenuItem>
@@ -190,6 +193,7 @@ export default function AdminUsersSplitPage() {
                     </TableCell>
                     <TableCell sx={colSx.status}>
                       <Select size="small" value={u.status || 'Active'} disabled={!editable || busy}
+                        sx={{ minWidth: 120 }}
                         onChange={(e)=>doStatus(u, e.target.value)}>
                         <MenuItem value="Active">Active</MenuItem>
                         <MenuItem value="Inactive">Inactive</MenuItem>
