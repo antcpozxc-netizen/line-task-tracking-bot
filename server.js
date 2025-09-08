@@ -955,7 +955,7 @@ app.post('/webhook/line', async (req,res)=>{
 
             const url = `${(PUBLIC_APP_URL || '').replace(/\/$/, '')}/auth/magic?t=${encodeURIComponent(token)}`;
             await reply(ev.replyToken,
-              `ลิงก์เข้าระบบ (หมดอายุใน 10 นาที):\n${url}\n\nถ้าหมดอายุ พิมพ์ "เข้าระบบ" เพื่อขอลิงก์ใหม่`);
+              `ลิงก์เข้าระบบ (หมดอายุใน 10 นาที):\n${url}\n\nถ้าหมดอายุ พิมพ์ "จัดการผู้ใช้งาน" เพื่อขอลิงก์ใหม่`);
           }
         } catch (e) {
           console.error('MAGIC_LINK_ERR', e?.message || e);
@@ -1216,7 +1216,8 @@ app.post('/webhook/line', async (req,res)=>{
           '',
           'เมนู / แอดมิน',
           '• รีเซ็ตเมนู',
-          '• ติดต่อแอดมิน  (พิมพ์ @ชื่อ ข้อความ)'
+          '• ติดต่อแอดมิน  (พิมพ์ @ชื่อ ข้อความ)',
+          '• จัดการผู้ใช้งาน (พิมพ์ จัดการผู้ใช้งาน)'
         ].join('\n');
         await reply(ev.replyToken, help);
         continue;

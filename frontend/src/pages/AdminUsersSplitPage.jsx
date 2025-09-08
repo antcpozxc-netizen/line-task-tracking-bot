@@ -22,12 +22,23 @@ const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
   username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
   name:    { width:{ xs:'34%', md:'38%' }, maxWidth:480, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' },
-  role:    { width:{ xs:160, md:200 }, whiteSpace:'nowrap',
-            pr:{ xs:3, md:5 } },     // 👉 ระยะขวาของคอลัมน์ role
-  status:  { width:{ xs:150, md:180 }, whiteSpace:'nowrap',
-            pl:{ xs:2, md:3 } },     // 👉 ระยะซ้ายของคอลัมน์ status
+  role: {
+    width: { xs: 150, md: 200 },
+    whiteSpace: 'nowrap',
+    pr: { xs: 2, md: 5 }           // ขยับช่องว่างด้านขวา role
+  },
+  status: {
+    width: { xs: 140, md: 180 },
+    whiteSpace: 'nowrap',
+    pl: { xs: 1.5, md: 3 }         // ขยับช่องว่างด้านซ้าย status
+  },
+  action: {
+    width: { xs: 64, md: 90 },      // ลดความกว้างคอลัมน์ action บนมือถือ
+    textAlign: 'center',
+    whiteSpace: 'nowrap'
+  },
   updated: { width:{ xs:0, md:220 }, display:{ xs:'none', md:'table-cell' }, whiteSpace:'nowrap' },
-  action:  { width:{ xs:70, md:90 }, textAlign:'center', whiteSpace:'nowrap' },
+  
 };
 
 function roleColor(r) {
@@ -160,7 +171,14 @@ export default function AdminUsersSplitPage() {
         </Box>
         <Divider />
         <TableContainer sx={{ overflowX:'auto', maxHeight:{ xs:420, md:560 } }}>
-          <Table size="small" stickyHeader sx={{ tableLayout: 'fixed' }}>
+          <Table
+            size="small"
+            stickyHeader
+            sx={{
+              tableLayout: 'fixed',
+              '& td, & th': { px: { xs: 1, sm: 2 }, fontSize: { xs: 13, sm: 14 } }
+            }}
+          >
             <TableHead>
               <TableRow>
                 <TableCell sx={colSx.id}      onClick={()=>onSort('user_id')}    >user_id</TableCell>
@@ -182,20 +200,39 @@ export default function AdminUsersSplitPage() {
                     <TableCell sx={colSx.username}>{u.username || '-'}</TableCell>
                     <TableCell sx={colSx.name}>{u.real_name || '-'}</TableCell>
                     <TableCell sx={colSx.role}>
-                      <Select size="small" value={r} disabled={!editable || busy}
-                        sx={{ minWidth: 132 }}  
-                        onChange={(e)=>doRole(u, e.target.value)}>
+                      <Select
+                        size="small"
+                        value={r}
+                        disabled={!editable || busy}
+                        onChange={(e)=>doRole(u, e.target.value)}
+                        sx={{
+                          minWidth: { xs: 118, sm: 132 },        // ⬅︎ แคบลงบนมือถือ
+                          '& .MuiSelect-select': { py: 0.5 }     // ⬅︎ ลด vertical padding
+                        }}
+                      >
                         <MenuItem value="user">user</MenuItem>
                         <MenuItem value="supervisor">supervisor</MenuItem>
                         <MenuItem value="admin">admin</MenuItem>
                         <MenuItem value="developer">developer</MenuItem>
                       </Select>
-                      <Chip size="small" sx={{ ml:1 }} label={r} color={roleColor(r)} />
+                      <Chip
+                        size="small"
+                        sx={{ ml: 1, display: { xs: 'none', sm: 'inline-flex' } }} // ⬅︎ ซ่อนบน xs
+                        label={r}
+                        color={roleColor(r)}
+                      />
                     </TableCell>
                     <TableCell sx={colSx.status}>
-                      <Select size="small" value={u.status || 'Active'} disabled={!editable || busy}
-                        sx={{ minWidth: 120 }}
-                        onChange={(e)=>doStatus(u, e.target.value)}>
+                      <Select
+                        size="small"
+                        value={u.status || 'Active'}
+                        disabled={!editable || busy}
+                        onChange={(e)=>doStatus(u, e.target.value)}
+                        sx={{
+                          minWidth: { xs: 110, sm: 120 },        // ⬅︎ แคบลงบนมือถือ
+                          '& .MuiSelect-select': { py: 0.5 }
+                        }}
+                      >
                         <MenuItem value="Active">Active</MenuItem>
                         <MenuItem value="Inactive">Inactive</MenuItem>
                       </Select>
