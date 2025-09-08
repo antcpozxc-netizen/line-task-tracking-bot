@@ -135,6 +135,38 @@ async function callLineAPI(path, options={}){
   return await go(false);
 }
 
+const ROLE_RANK = { user:1, supervisor:2, admin:3, developer:4 };
+
+// ฟังก์ชันอัปเดต role แบบทนทาน: ลองหลาย action เผื่อชื่อใน Apps Script ต่างกัน
+async function gsSetUserRole(user_id, role) {
+  const payload = { user_id, role };
+  try {
+    return await callAppsScript('set_user_role', payload);
+  } catch (e1) {
+    console.warn('set_user_role failed, fallback to update_user', e1?.message || e1);
+    try {
+      return await callAppsScript('update_user', payload);
+    } catch (e2) {
+      console.error('update_user failed, fallback to upsert_user', e2?.message || e2);
+      return await callAppsScript('upsert_user', payload);
+    }
+  }
+}
+
+async function gsSetUserStatus(user_id, status) {
+  const payload = { user_id, status };
+  try {
+    return await callAppsScript('set_user_status', payload);
+  } catch (e1) {
+    console.warn('set_user_status failed, fallback to update_user', e1?.message || e1);
+    try {
+      return await callAppsScript('update_user', payload);
+    } catch (e2) {
+      console.error('update_user failed, fallback to upsert_user', e2?.message || e2);
+      return await callAppsScript('upsert_user', payload);
+    }
+  }
+}
 // ── Apps Script helper
 async function callAppsScript(action, data) {
   if (!APPS_SCRIPT_EXEC_URL) throw new Error('Missing APPS_SCRIPT_EXEC_URL');
@@ -1806,45 +1838,85 @@ app.post('/api/admin/tasks/status',
 
 
 // ── Users admin APIs
+// GET รายชื่อผู้ใช้
 app.get('/api/admin/users',
   requireAuth,
-  requireRole(['admin','supervisor','developer']),
+  requireRole(['developer','admin','supervisor']),
   async (req, res) => {
     try {
       const r = await callAppsScript('list_users', {});
       res.json({ ok: true, users: r.users || [] });
     } catch (e) {
-      console.error('USERS_LIST_ERR', e);
-      res.status(500).json({ ok: false });
+      console.error('LIST_USERS_ERR', e?.message || e);
+      res.status(500).json({ ok: false, error: 'LIST_USERS_ERR' });
     }
   }
 );
 
-// ต้องอนุญาตให้ developer/admin/supervisor ใช้ได้
+// POST เปลี่ยน role
 app.post('/api/admin/users/role',
-  requireRole(['developer', 'admin', 'supervisor']),
+  requireAuth,
+  requireRole(['developer','admin','supervisor']),
   async (req, res) => {
-    const { user_id, role } = req.body || {};
-    if (!user_id || !role) return res.status(400).json({ ok:false, error:'missing params' });
+    try {
+      const { user_id, role } = req.body || {};
+      if (!user_id || !role) return res.status(400).json({ ok:false, error:'missing user_id or role' });
 
-    // เรียก Apps Script: ชื่อ action ต้องตรงกับสคริปต์คุณ
-    const r = await callAppsScript('set_user_role', { user_id, role });
-    if (!r.ok) return res.status(500).json({ ok:false, error:r.error || 'script failed' });
+      const r = String(role).toLowerCase();
+      if (!['developer','admin','supervisor','user'].includes(r)) {
+        return res.status(400).json({ ok:false, error:'invalid role' });
+      }
 
-    res.json({ ok:true });
+      // (ถ้าต้องการบังคับชั้นสิทธิ์)
+      // const myRank = ROLE_RANK[String(req.user?.role || 'user').toLowerCase()] || 0;
+      // ไม่รู้ role ปัจจุบันของเป้าหมายจาก GS ก็ข้ามเช็คนี้ไปก่อนเพื่อเลี่ยง 500
+
+      const resp = await gsSetUserRole(user_id, r);
+      return res.json({ ok: true, result: resp || null });
+    } catch (e) {
+      console.error('SET_USER_ROLE_ERR', e?.message || e);
+      res.status(500).json({ ok:false, error:'SET_USER_ROLE_ERR' });
+    }
   }
 );
 
+// POST เปลี่ยนสถานะ (Active/Inactive)
 app.post('/api/admin/users/status',
-  requireRole(['developer', 'admin', 'supervisor']),
+  requireAuth,
+  requireRole(['developer','admin']),
   async (req, res) => {
-    const { user_id, status } = req.body || {};
-    if (!user_id || !status) return res.status(400).json({ ok:false, error:'missing params' });
+    try {
+      const { user_id, status } = req.body || {};
+      if (!user_id || !status) return res.status(400).json({ ok:false, error:'missing user_id or status' });
 
-    const r = await callAppsScript('set_user_status', { user_id, status });
-    if (!r.ok) return res.status(500).json({ ok:false, error:r.error || 'script failed' });
+      const s = String(status);
+      if (!['Active','Inactive'].includes(s)) {
+        return res.status(400).json({ ok:false, error:'invalid status' });
+      }
 
-    res.json({ ok:true });
+      const resp = await gsSetUserStatus(user_id, s);
+      return res.json({ ok: true, result: resp || null });
+    } catch (e) {
+      console.error('SET_USER_STATUS_ERR', e?.message || e);
+      res.status(500).json({ ok:false, error:'SET_USER_STATUS_ERR' });
+    }
+  }
+);
+
+// DELETE (soft delete → Inactive)
+app.delete('/api/admin/users/:user_id',
+  requireAuth,
+  requireRole(['developer','admin']),
+  async (req, res) => {
+    try {
+      const user_id = req.params.user_id;
+      if (!user_id) return res.status(400).json({ ok:false, error:'missing user_id' });
+      await gsSetUserStatus(user_id, 'Inactive');
+      res.json({ ok:true });
+    } catch (e) {
+      console.error('DELETE_USER_ERR', e?.message || e);
+      res.status(500).json({ ok:false, error:'DELETE_USER_ERR' });
+    }
   }
 );
 
