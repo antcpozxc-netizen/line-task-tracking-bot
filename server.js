@@ -1878,8 +1878,22 @@ app.post('/api/admin/users/role',
       // role ใหม่ที่อยากตั้ง
       const newRk = ROLE_RANK[r] || 0;
 
-      if (tgtRk >= myRk)   return res.status(403).json({ ok:false, error:'CANNOT_EDIT_PEER_OR_HIGHER' });
-      if (newRk >= myRk)   return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER_OR_EQUAL' });
+      if (tgtRk >= myRk) {
+        // ยังกันไม่ให้แก้ 'peer หรือสูงกว่า' เสมอ (dev แก้ dev คนอื่นก็ไม่ให้)
+        return res.status(403).json({ ok:false, error:'CANNOT_EDIT_PEER_OR_HIGHER' });
+      }
+      const canSetEqual = (myRk === ROLE_RANK.developer); // อนุญาต equal เฉพาะ developer
+      if (canSetEqual) {
+        // dev ตั้งค่าได้ถึงระดับ dev (เท่ากัน) แต่ไม่มีใครสูงกว่า dev อยู่แล้ว
+        if (newRk > myRk) {
+          return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER' });
+        }
+      } else {
+        // บทบาทอื่น ๆ ตั้งได้เฉพาะต่ำกว่า
+        if (newRk >= myRk) {
+          return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER_OR_EQUAL' });
+        }
+      }
 
       const resp = await gsSetUserRole(user_id, r);
       return res.json({ ok: true, result: resp || null });

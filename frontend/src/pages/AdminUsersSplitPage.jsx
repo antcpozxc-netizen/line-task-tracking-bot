@@ -64,10 +64,13 @@ export default function AdminUsersSplitPage() {
   const [orderBy, setOrderBy] = useState('updated_at');
   const [order, setOrder] = useState('desc');
 
-  const roleChoices = useMemo(
-   () => Object.keys(ROLE_RANK).filter(r => (ROLE_RANK[r] || 0) < myRank),
-   [myRank]
-  );
+  // ให้ developer เห็น role เท่ากับตัวเองได้ (<=) ส่วนคนอื่นเห็นได้เฉพาะต่ำกว่า (<)
+  const roleChoices = useMemo(() => {
+    return Object.keys(ROLE_RANK).filter((r) => {
+      const rk = ROLE_RANK[r] || 0;
+      return myRole === 'developer' ? rk <= myRank : rk < myRank;
+    });
+  }, [myRole, myRank]);
 
   const load = async () => {
     setBusy(true);
@@ -219,7 +222,9 @@ export default function AdminUsersSplitPage() {
                         sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
                         onChange={(e)=>doRole(u, e.target.value)}
                       >
-                        {roleChoices.map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}
+                        {roleChoices.map(v => (
+                          <MenuItem key={v} value={v}>{v}</MenuItem>
+                        ))}
                       </Select>
                       <Chip
                         size="small"
