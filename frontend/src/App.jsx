@@ -20,10 +20,8 @@ function AppShell({ children }) {
 export default function App() {
   return (
     <Routes>
-      {/* เปิดเว็บเปล่าให้เข้า Home ทันที */}
+      {/* เปิดเว็บให้เข้าหน้า Home */}
       <Route path="/" element={<Navigate to="/app" replace />} />
-
-      {/* ถ้า server redirect มาที่ /login → เด้งไป Home เลย */}
       <Route path="/login" element={<Navigate to="/app" replace />} />
 
       {/* ต้องมี session */}
