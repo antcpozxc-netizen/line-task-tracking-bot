@@ -905,7 +905,7 @@ app.post('/webhook/line', async (req,res)=>{
       }
 
           // ===== Magic Link Login =====
-      if (/^(เข้าระบบ|เข้าสู่ระบบ|admin|dashboard)$/i.test(text)) {
+      if (/^(จัดการผู้ใช้งาน|เข้าสู่ระบบ|admin|dashboard)$/i.test(text)) {
         try {
           // 1) ตรวจ role จาก Google Sheet
           const r = await callAppsScript('get_user', { user_id: userId });
@@ -1630,28 +1630,59 @@ function issueMagicToken(payload, expires = TOKEN_TTL) {
   return { token, jti };
 }
 
-// GET /auth/magic?t=<jwt> → ตั้ง session แล้วพาเข้า /app
+// ===== Magic Link (Two-step; ป้องกัน LINE Preview กิน token ก่อนเวลา) =====
+
+// STEP 1: GET แค่ render หน้า auto-submit form (ไม่ consume token)
 app.get('/auth/magic', (req, res) => {
+  const t = String(req.query.t || '');
+  if (!t) return res.status(400).send('Missing token');
+
   try {
-    const t = String(req.query.t || '');
+    const decoded = jwt.verify(t, APP_JWT_SECRET || 'secret');
+    if (decoded.scope !== 'web-magic') throw new Error('bad scope');
+
+    // ถ้า token เคยใช้แล้ว และมี session อยู่แล้ว → เข้าหน้า app ได้เลย
+    const sess = readSession(req);
+    if (usedJTI.has(decoded.jti) && sess?.uid) {
+      return res.redirect('/app');
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.end(`
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signing you in…</title>
+<form id="f" method="POST" action="/auth/magic/consume">
+  <input type="hidden" name="t" value="${t}">
+  <noscript><button type="submit">แตะเพื่อเข้าระบบ</button></noscript>
+</form>
+<script>document.getElementById('f').submit();</script>
+    `);
+  } catch (e) {
+    console.error('AUTH_MAGIC_PREVIEW_ERR', e?.message || e);
+    return res.status(401).send('Invalid or expired token');
+  }
+});
+
+// STEP 2: POST จริง → consume + set session
+app.post('/auth/magic/consume', express.urlencoded({ extended: false }), (req, res) => {
+  try {
+    const t = String(req.body.t || '');
     if (!t) return res.status(400).send('Missing token');
 
     const decoded = jwt.verify(t, APP_JWT_SECRET || 'secret');
     if (decoded.scope !== 'web-magic') return res.status(401).send('Invalid token');
 
-    // กันใช้ซ้ำ
     if (usedJTI.has(decoded.jti)) return res.status(410).send('Token already used');
     usedJTI.add(decoded.jti);
 
-    // ตั้ง session โดยใช้ Messaging API userId เป็น uid
     setSession(res, { uid: decoded.uid, name: decoded.name || '' });
-
     return res.redirect('/app');
   } catch (e) {
-    console.error('AUTH_MAGIC_ERR', e?.message || e);
+    console.error('AUTH_MAGIC_CONSUME_ERR', e?.message || e);
     return res.status(401).send('Invalid or expired token');
   }
 });
+
 
 
 
