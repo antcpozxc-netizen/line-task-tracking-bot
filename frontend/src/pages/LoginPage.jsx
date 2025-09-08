@@ -31,7 +31,7 @@ export default function LoginPage() {
               </Box>
               <Typography variant="h4" color="primary">TasksTracker</Typography>
               <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-                เข้าสู่ระบบด้วย LINE เพื่อจัดการงานและผู้ใช้ในระบบ VPC Tasks Tracking
+                เข้าสู่ระบบด้วย LINE เพื่อจัดการงานและผู้ใช้ในระบบ Tasks Tracking
               </Typography>
               <Button
                 size="large"
