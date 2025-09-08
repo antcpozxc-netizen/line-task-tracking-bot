@@ -64,6 +64,11 @@ export default function AdminUsersSplitPage() {
   const [orderBy, setOrderBy] = useState('updated_at');
   const [order, setOrder] = useState('desc');
 
+  const roleChoices = useMemo(
+   () => Object.keys(ROLE_RANK).filter(r => (ROLE_RANK[r] || 0) < myRank),
+   [myRank]
+  );
+
   const load = async () => {
     setBusy(true);
     try {
@@ -97,6 +102,13 @@ export default function AdminUsersSplitPage() {
 
   // ---- actions ----
   const doRole = async (u, role) => {
+    // กันหน้าเว็บ: เป้าหมายต้องต่ำกว่าเรา และ role ใหม่ก็ต้องต่ำกว่าเรา
+    const targetRank = ROLE_RANK[String(u.role||'user').toLowerCase()] || 0;
+    const newRank    = ROLE_RANK[String(role||'user').toLowerCase()] || 0;
+    if (targetRank >= myRank || newRank >= myRank) {
+      setSnack({ open:true, msg:'คุณไม่มีสิทธิ์เปลี่ยนสิทธิ์นี้', sev:'error' });
+      return;
+    }
     setBusy(true);
     try {
       await setUserRole(u.user_id, role);
@@ -204,16 +216,10 @@ export default function AdminUsersSplitPage() {
                         size="small"
                         value={r}
                         disabled={!editable || busy}
+                        sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
                         onChange={(e)=>doRole(u, e.target.value)}
-                        sx={{
-                          minWidth: { xs: 118, sm: 132 },        // ⬅︎ แคบลงบนมือถือ
-                          '& .MuiSelect-select': { py: 0.5 }     // ⬅︎ ลด vertical padding
-                        }}
                       >
-                        <MenuItem value="user">user</MenuItem>
-                        <MenuItem value="supervisor">supervisor</MenuItem>
-                        <MenuItem value="admin">admin</MenuItem>
-                        <MenuItem value="developer">developer</MenuItem>
+                        {roleChoices.map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}
                       </Select>
                       <Chip
                         size="small"

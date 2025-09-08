@@ -1656,7 +1656,7 @@ app.post('/api/cron/reset-richmenu', async (req, res) => {
 
 // === Magic Link (One-time) ===
 const usedJTI = new Set();               // โปรดักชันควรใช้ Redis/DB แทน
-const TOKEN_TTL = '10m';                 // อายุ token (อ่านปรับได้)
+const TOKEN_TTL = '365d';   // ลิ้งก์อยู่ได้ 1 ปี (ปรับได้ตามต้องการ)
 function issueMagicToken(payload, expires = TOKEN_TTL) {
   const jti = crypto.randomBytes(16).toString('hex');
   const token = jwt.sign({ ...payload, jti, scope: 'web-magic' }, APP_JWT_SECRET || 'secret', { expiresIn: expires });
@@ -1705,8 +1705,7 @@ app.post('/auth/magic/consume', express.urlencoded({ extended: false }), (req, r
     const decoded = jwt.verify(t, APP_JWT_SECRET || 'secret');
     if (decoded.scope !== 'web-magic') return res.status(401).send('Invalid token');
 
-    if (usedJTI.has(decoded.jti)) return res.status(410).send('Token already used');
-    usedJTI.add(decoded.jti);
+    // อนุญาตให้ใช้ซ้ำได้ → ไม่เช็ค/ไม่ mark used อีกต่อไป
 
     setSession(res, { uid: decoded.uid, name: decoded.name || '' });
     return res.redirect('/app');
@@ -1868,9 +1867,19 @@ app.post('/api/admin/users/role',
         return res.status(400).json({ ok:false, error:'invalid role' });
       }
 
-      // (ถ้าต้องการบังคับชั้นสิทธิ์)
-      // const myRank = ROLE_RANK[String(req.user?.role || 'user').toLowerCase()] || 0;
-      // ไม่รู้ role ปัจจุบันของเป้าหมายจาก GS ก็ข้ามเช็คนี้ไปก่อนเพื่อเลี่ยง 500
+      // สิทธิ์ของผู้เรียก
+      const me   = await callAppsScript('get_user', { user_id: req.sess.uid });
+      const myRk = ROLE_RANK[String(me?.user?.role||'user').toLowerCase()] || 0;
+
+      // สิทธิ์ของเป้าหมายตอนนี้
+      const tgt  = await callAppsScript('get_user', { user_id });
+      const tgtRk = ROLE_RANK[String(tgt?.user?.role||'user').toLowerCase()] || 0;
+
+      // role ใหม่ที่อยากตั้ง
+      const newRk = ROLE_RANK[r] || 0;
+
+      if (tgtRk >= myRk)   return res.status(403).json({ ok:false, error:'CANNOT_EDIT_PEER_OR_HIGHER' });
+      if (newRk >= myRk)   return res.status(403).json({ ok:false, error:'CANNOT_SET_HIGHER_OR_EQUAL' });
 
       const resp = await gsSetUserRole(user_id, r);
       return res.json({ ok: true, result: resp || null });
