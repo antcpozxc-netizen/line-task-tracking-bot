@@ -21,7 +21,7 @@ export default function HomePage() {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 จัดการบทบาทและสถานะผู้ใช้ทั้งหมด
               </Typography>
-              <Button variant="contained" component={RouterLink} to="/admin/users">
+              <Button variant="contained" component={RouterLink} to="/admin/users-split">
                 ไปที่ Users (แบ่งตาม role)
               </Button>
             </CardContent>
