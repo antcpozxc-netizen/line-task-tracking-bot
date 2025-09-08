@@ -12,7 +12,6 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import Button from '@mui/material/Button';
 
 import useMe from '../hooks/useMe';
 import { listUsers, setUserRole, setUserStatus, deleteUser } from '../api/client';
