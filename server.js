@@ -905,7 +905,7 @@ app.post('/webhook/line', async (req,res)=>{
       }
 
           // ===== Magic Link Login =====
-      if (/^(จัดการผู้ใช้งาน|เข้าสู่ระบบ|admin|dashboard)$/i.test(text)) {
+      if (/^(จัดการผู้ใช้|จัดการผู้ใช้งาน|เข้าสู่ระบบ|admin|dashboard)$/i.test(text)) {
         try {
           // 1) ตรวจ role จาก Google Sheet
           const r = await callAppsScript('get_user', { user_id: userId });
@@ -1692,13 +1692,10 @@ const distDir = path.join(__dirname, 'frontend', 'dist');
 // 1) Guard เฉพาะ path ที่ต้องล็อกอิน (มาก่อน static!)
 const mustLoginPaths = ['/app', '/tasks', '/onboarding', '/admin', '/admin/users', '/admin/users-split'];
 app.get(mustLoginPaths, (req, res) => {
-  const s = readSession(req);
-  if (!s) {
-    // ถ้าไม่มี session → พาไป /app เลย
-    return res.redirect('/app');
-  }
+  // เสิร์ฟ SPA ให้ React จัดการเอง
   return res.sendFile(path.join(distDir, 'index.html'));
 });
+
 
 
 // 2) Serve static
