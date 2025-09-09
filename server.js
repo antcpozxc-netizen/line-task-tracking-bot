@@ -547,7 +547,7 @@ function parseAssignLoose(text) {
   if (!text) return null;
   const raw = String(text).trim();
 
-  // ต้องมี @mention ที่ไหนก็ได้ในประโยค
+  // ต้องมี @mention ที่ไหนก็ได้
   const mUser = raw.match(/@([^\s:：]+)/);
   if (!mUser) return null;
 
@@ -576,14 +576,14 @@ function parseAssignLoose(text) {
   let relDay = ''; // '' | 'วันนี้' | 'พรุ่งนี้'
   const remove = (re) => { body = body.replace(re, ' ').replace(/\s+/g, ' ').trim(); };
 
-  // วันนี้/พรุ่งนี้ (สะกดผิดยอดนิยมด้วย)
+  // วันนี้/พรุ่งนี้ (รวมสะกดผิดยอดนิยม) — ใช้ boundary กันติดกับคำอื่น
   let m = body.match(/(?:^|\s)(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)(?=\s|$)/);
   if (m) {
     relDay = (/^วันนี้$/.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้');
     remove(m[0]);
   }
 
-  // วันไทยนี้/หน้า + เวลา (จันทร์หน้า, พุธนี้ 14:00)
+  // วันไทยนี้/หน้า + เวลา (เช่น จันทร์หน้า, พุธนี้ 14:00)
   if (!deadline) {
     m = body.match(/(?:วัน)?(อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)(นี้|หน้า)(?:\s*(\d{1,2})(?::(\d{2}))?)?/);
     if (m) {
@@ -607,21 +607,18 @@ function parseAssignLoose(text) {
 
   // ----------- หา "ช่วงเวลา" แบบพูด -----------
   let timeStr = ''; // HH:mm
-  // เที่ยง/เที่ยงครึ่ง/เที่ยงตรง
-  // เที่ยง/เที่ยงตรง/เที่ยงครึ่ง  → เก็บเป็น timeStr เพื่อไปรวมกับ "วันนี้/พรุ่งนี้" ทีหลัง
-  if (/เที่ยงครึ่ง/.test(body)) {
-    timeStr = '12:30'; remove(/เที่ยงครึ่ง/g);
-  } else if (/เที่ยง(ตรง)?/.test(body)) {
-    timeStr = '12:00'; remove(/เที่ยง(ตรง)?/g);
-  }
-  // sadasdad
+
+  // เที่ยง / เที่ยงครึ่ง / เที่ยงตรง
+  if (/เที่ยงครึ่ง/.test(body)) { timeStr = '12:30'; remove(/เที่ยงครึ่ง/g); }
+  else if (/เที่ยง(ตรง)?/.test(body)) { timeStr = '12:00'; remove(/เที่ยง(ตรง)?/g); }
+
   // บ่ายหนึ่ง/สอง/... [ครึ่ง]
   if (!timeStr) {
     m = body.match(/บ่าย\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|12|\d{1,2})\s*(โมง)?(ครึ่ง)?/);
     if (m) {
       const map = { หนึ่ง:13, สอง:14, สาม:15, สี่:16, ห้า:17, หก:18, เจ็ด:19, แปด:20, เก้า:21, สิบ:22, สิบเอ็ด:23 };
-      let hh = map[m[1]] ?? (12 + Number(m[1]));
-      let mm = m[3] ? 30 : 0;
+      const hh = map[m[1]] ?? (12 + Number(m[1]));
+      const mm = m[3] ? 30 : 0;
       timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
       remove(m[0]);
     }
@@ -634,7 +631,7 @@ function parseAssignLoose(text) {
       let hh, mm = (m[3] || m[5]) ? 30 : 0;
       if (m[1]) { // X โมง ...
         hh = Number(m[1]);
-        if (m[2] === 'เย็น') { if (hh <= 6) hh += 12; }
+        if (m[2] === 'เย็น' && hh <= 6) hh += 12;
       } else if (m[4]) { // X ทุ่ม
         hh = 18 + Number(m[4]); // 1 ทุ่ม = 19
       }
@@ -656,19 +653,18 @@ function parseAssignLoose(text) {
     }
   }
 
-  // รวม "วัน" + "ช่วงเวลา"
+  // รวม "วัน" + "ช่วงเวลา" หรือเติมค่าปริยาย
   if (!deadline && relDay && timeStr) deadline = parseNaturalDue(`${relDay} ${timeStr}`);
-  // ถ้ามีแค่เวลา → วันนี้
-  if (!deadline && timeStr)       deadline = parseNaturalDue(`วันนี้ ${timeStr}`);
-  // ถ้ามีแค่วัน → default วันนี้ 17:30 / พรุ่งนี้ 09:00
-  if (!deadline && relDay)        deadline = parseNaturalDue(relDay);
+  if (!deadline && timeStr)          deadline = parseNaturalDue(`วันนี้ ${timeStr}`);
+  if (!deadline && relDay)           deadline = parseNaturalDue(relDay);
 
-  // ล้างคำฟิลเลอร์ปลายประโยค
+  // ล้างคำฟิลเลอร์ปลายประโยค (กันคำวัน/เวลาเหลือหลุดมา)
   body = body.replace(/\b(ก่อน|ภายใน|นะ|ด้วย)\b/g, ' ').replace(/\s+/g,' ').trim();
 
   const detail = body || '-';
   return { assigneeName, detail, deadline, note };
 }
+
 
 
 
