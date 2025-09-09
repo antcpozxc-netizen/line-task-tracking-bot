@@ -1892,24 +1892,54 @@ app.post('/api/admin/users/update',
       const { user_id, username, real_name } = req.body || {};
       if (!user_id) return res.status(400).json({ ok:false, error:'missing user_id' });
 
+      // เฉพาะฟิลด์ที่ต้องการแก้
       const patch = {};
       if (username !== undefined)  patch.username  = String(username);
       if (real_name !== undefined) patch.real_name = String(real_name);
+      if (Object.keys(patch).length === 0) {
+        return res.status(400).json({ ok:false, error:'nothing_to_update' });
+      }
 
-      // ลอง update_user → ถ้าไม่มี ฟอลแบ็กไป upsert_user
+      // 1) พยายาม partial update ก่อน
       try {
         await callAppsScript('update_user', { user_id, ...patch });
+        return res.json({ ok:true });
       } catch (e1) {
         console.warn('update_user failed, fallback to upsert_user:', e1?.message || e1);
-        await callAppsScript('upsert_user', { user_id, ...patch });
       }
-      return res.json({ ok:true });
+
+      // 2) Fallback แบบปลอดภัย: ดึงค่าปัจจุบันมา preserve role/status (และค่าที่ไม่ได้แก้)
+      let cur = null;
+      try {
+        cur = await callAppsScript('get_user', { user_id });
+      } catch (e2) {
+        console.warn('get_user failed during fallback:', e2?.message || e2);
+      }
+      const curUser = (cur && cur.user) ? cur.user : {};
+
+      const safe = {
+        user_id,
+        // ถ้าไม่ได้แก้ฟิลด์นั้น ให้ใช้ค่าปัจจุบันแทน (กันโดนล้าง)
+        username:   patch.username  ?? curUser.username  ?? '',
+        real_name:  patch.real_name ?? curUser.real_name ?? '',
+        role:       curUser.role    ?? 'user',
+        status:     curUser.status  ?? 'Active'
+      };
+
+      try {
+        await callAppsScript('upsert_user', safe);
+        return res.json({ ok:true, fallback:'upsert_user' });
+      } catch (e3) {
+        console.error('UPSERT_FALLBACK_ERR', e3?.message || e3);
+        return res.status(500).json({ ok:false, error:'UPSERT_FALLBACK_ERR' });
+      }
     } catch (e) {
       console.error('UPDATE_USER_ERR', e?.message || e);
       res.status(500).json({ ok:false, error:'UPDATE_USER_ERR' });
     }
   }
 );
+
 
 
 // POST เปลี่ยน role
