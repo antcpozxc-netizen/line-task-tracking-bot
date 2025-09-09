@@ -14,7 +14,8 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 
 import useMe from '../hooks/useMe';
-import { listUsers, setUserRole, setUserStatus, deleteUser } from '../api/client';
+import { listUsers, setUserRole, setUserStatus, deleteUser, updateUserProfile } from '../api/client';
+
 
 // เดิม: { user:1, supervisor:2, admin:3, developer:4 }
 const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
@@ -22,7 +23,7 @@ const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
 const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
   username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
-  name:    { width:{ xs:'34%', md:'38%' }, maxWidth:480, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' },
+  name:    { minWidth:{ xs:260, md:360 }, whiteSpace:'nowrap' },
   role: {
     width: { xs: 150, md: 200 },
     whiteSpace: 'nowrap',
@@ -79,9 +80,11 @@ export default function AdminUsersSplitPage() {
   const load = async () => {
     setBusy(true);
     try {
-      const j = await listUsers();      // { users: [...] }
-      setRows(j.users || []);
+      const j = await listUsers();
+      setRows([...(j.users || [])]);
       setRefreshedAt(new Date());
+    } catch (e) {
+      setSnack({ open:true, msg:'โหลดรายชื่อไม่สำเร็จ', sev:'error' });
     } finally {
       setBusy(false);
     }
@@ -202,6 +205,61 @@ export default function AdminUsersSplitPage() {
       </Box>
     );
   }
+  // --- inline edit username/name ---
+  const [editingId, setEditingId] = useState(null);
+  const [draftUsername, setDraftUsername] = useState('');
+  const [draftName, setDraftName] = useState('');
+
+  const startEdit = (u) => {
+    if (!u) return;
+    setEditingId(u.user_id);
+    setDraftUsername(u.username || '');
+    setDraftName(u.real_name || '');
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraftUsername('');
+    setDraftName('');
+  };
+
+  // รองรับทั้งเคสมีฟังก์ชัน updateUser ใน ../api/client หรือไม่มี (fallback เรียก REST โดยตรง)
+  async function callUpdateUserProfile(user_id, payload){
+    try {
+      // ถ้า api client มีให้ใช้เลย
+      // eslint-disable-next-line no-undef
+      if (typeof updateUser === 'function') {
+        // @ts-ignore
+        return await updateUser(user_id, payload);
+      }
+    } catch {}
+    // fallback: เรียก endpoint มาตรฐาน (แก้ path ให้ตรงกับแบ็กเอนด์ของคุณ)
+    const res = await fetch('/api/users/update', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ user_id, ...payload })
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || j?.ok === false) throw new Error(j?.error || 'update failed');
+    return j;
+  }
+
+  const saveEdit = async (u) => {
+    if (!u) return;
+    setBusy(true);
+    try {
+      await callUpdateUserProfile(u.user_id, {
+        username: draftUsername,
+        real_name: draftName
+      });
+      setSnack({ open:true, msg:'อัปเดตโปรไฟล์แล้ว', sev:'success' });
+      cancelEdit();
+      await load();
+    } catch (e) {
+      setSnack({ open:true, msg:'อัปเดตโปรไฟล์ไม่สำเร็จ', sev:'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   function TableBlock({ title, items }) {
     return (
@@ -211,13 +269,13 @@ export default function AdminUsersSplitPage() {
         </Box>
         <Divider />
         <TableContainer sx={{ overflowX:'auto', maxHeight:{ xs:420, md:560 } }}>
-          <Table
-            size="small"
-            stickyHeader
-            sx={{
-              tableLayout: 'fixed',
-              '& td, & th': { px: { xs: 1, sm: 2 }, fontSize: { xs: 13, sm: 14 } }
-            }}
+          <Table 
+            size="small" 
+            stickyHeader 
+            sx={{ 
+              tableLayout: 'auto', // ให้คอลัมน์ขยายตามเนื้อหา (ชื่อยาวก็เห็นเต็ม) 
+              '& td, & th': { px: { xs: 1, sm: 2 }, fontSize: { xs: 13, sm: 14 } } 
+            }} 
           >
             <TableHead>
               <TableRow>
@@ -237,27 +295,54 @@ export default function AdminUsersSplitPage() {
                 return (
                   <TableRow key={u.user_id} hover>
                     <TableCell sx={colSx.id}><IdCell id={u.user_id} /></TableCell>
-                    <TableCell sx={colSx.username}>{u.username || '-'}</TableCell>
-                    <TableCell sx={colSx.name}>{u.real_name || '-'}</TableCell>
+                    <TableCell sx={colSx.username}>
+                      {editingId === u.user_id ? (
+                        <Box sx={{ display:'flex', gap:1, alignItems:'center' }}>
+                          <input
+                            value={draftUsername}
+                            onChange={e=>setDraftUsername(e.target.value)}
+                            disabled={!editable || busy}
+                            style={{ width: 140, font: 'inherit', padding: '4px 6px' }}
+                          />
+                        </Box>
+                      ) : (
+                        <Box sx={{ whiteSpace:'nowrap' }}>{u.username || '-'}</Box>
+                      )}
+                    </TableCell>
+                    <TableCell sx={colSx.name}>
+                      {editingId === u.user_id ? (
+                        <Box sx={{ display:'flex', gap:1, alignItems:'center' }}>
+                          <input
+                            value={draftName}
+                            onChange={e=>setDraftName(e.target.value)}
+                            disabled={!editable || busy}
+                            style={{ width: 260, font: 'inherit', padding: '4px 6px' }}
+                          />
+                        </Box>
+                      ) : (
+                        // ชื่อ: บรรทัดเดียว (ไม่ตัด …) และปล่อยให้เลื่อนแนวนอนทั้งตาราง
+                        <Box sx={{ whiteSpace:'nowrap' }}>{u.real_name || '-'}</Box>
+                      )}
+                    </TableCell>
                     <TableCell sx={colSx.role}>
-                      <Select
-                        size="small"
-                        value={r}
-                        disabled={!editable || busy}
-                        sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
-                        onChange={(e)=>doRole(u, e.target.value)}
-                      >
-                        {getAllowedRoles(r).map(v => (
-                          <MenuItem key={v} value={v}>{v}</MenuItem>
-                        ))}
-                      </Select>
-
-                      <Chip
-                        size="small"
-                        sx={{ ml: 1, display: { xs: 'none', sm: 'inline-flex' } }}
-                        label={r}
-                        color={roleColor(r)}
-                      />
+                      <Stack spacing={0.5} direction={{ xs:'row', md:'column' }} alignItems="flex-start">
+                        <Select
+                          size="small"
+                          value={r}
+                          disabled={!editable || busy}
+                          sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
+                          onChange={(e)=>doRole(u, e.target.value)}
+                        >
+                          {getAllowedRoles(r).map(v => (<MenuItem key={v} value={v}>{v}</MenuItem>))}
+                        </Select>
+                        {/* แสดง chip แค่บน md+ และวาง “ใต้” select เพื่อลดการเบียดฝั่ง status */}
+                        <Chip
+                          size="small"
+                          sx={{ display:{ xs:'none', md:'inline-flex' } }}
+                          label={r}
+                          color={roleColor(r)}
+                        />
+                      </Stack>
                     </TableCell>
                     <TableCell sx={colSx.status}>
                       <Select
@@ -276,14 +361,31 @@ export default function AdminUsersSplitPage() {
                     </TableCell>
                     <TableCell sx={colSx.updated}>{u.updated_at || ''}</TableCell>
                     <TableCell sx={colSx.action} align="center">
-                      <Tooltip title={editable ? 'ลบผู้ใช้' : 'ห้ามลบผู้ใช้ระดับเท่ากัน/สูงกว่า'}>
-                        <span>
-                          <IconButton color="error" disabled={!editable || busy}
-                            onClick={()=>setConfirm({ user_id: u.user_id, name: u.real_name || u.username || u.user_id })}>
-                            <DeleteIcon />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
+                      {editable && editingId !== u.user_id && (
+                        <Stack direction="row" spacing={0.5} justifyContent="center">
+                          <Button size="small" variant="outlined" disabled={busy} onClick={()=>startEdit(u)}>แก้ไข</Button>
+                          <Tooltip title="ตั้งเป็น Inactive">
+                            <span>
+                              <IconButton color="error" disabled={busy}
+                                onClick={()=>setConfirm({ user_id: u.user_id, name: u.real_name || u.username || u.user_id })}>
+                                <DeleteIcon />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Stack>
+                      )}
+                      {editable && editingId === u.user_id && (
+                        <Stack direction="row" spacing={0.5} justifyContent="center">
+                          <Button size="small" variant="contained" disabled={busy}
+                            onClick={()=>saveEdit(u)}>บันทึก</Button>
+                          <Button size="small" variant="text" disabled={busy} onClick={cancelEdit}>ยกเลิก</Button>
+                        </Stack>
+                      )}
+                      {!editable && (
+                        <Tooltip title="ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า">
+                          <span><Button size="small" disabled>แก้ไข</Button></span>
+                        </Tooltip>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

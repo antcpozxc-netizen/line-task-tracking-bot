@@ -83,3 +83,6 @@ export const exportTasksCsv = (opts = {}) => {
   const url = '/api/admin/tasks/export' + qs(opts);
   window.location.href = url; // ให้เบราว์เซอร์ดาวน์โหลดไฟล์
 };
+// แก้ไขข้อมูลผู้ใช้ (username / real_name)
+export const updateUserProfile = (user_id, payload) =>
+  apiPost('/api/admin/users/update', { user_id, ...payload });

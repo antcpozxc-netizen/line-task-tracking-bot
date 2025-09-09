@@ -953,7 +953,7 @@ app.post('/webhook/line', async (req,res)=>{
           } else {
             // 3) ออก magic token อายุสั้น
             const display = user?.real_name || user?.username || (await getDisplayName(userId)) || 'User';
-            const { token } = issueMagicToken({ uid: userId, name: display, role }, '10m');
+            const { token } = issueMagicToken({ uid: userId, name: display, role });
 
             const url = `${(PUBLIC_APP_URL || '').replace(/\/$/, '')}/auth/magic?t=${encodeURIComponent(token)}`;
             await reply(ev.replyToken,
@@ -1851,6 +1851,29 @@ app.get('/api/admin/users',
     } catch (e) {
       console.error('LIST_USERS_ERR', e?.message || e);
       res.status(500).json({ ok: false, error: 'LIST_USERS_ERR' });
+    }
+  }
+);
+
+app.post('/api/admin/users/update',
+  requireAuth,
+  requireRole(['developer','admin','supervisor']),
+  express.json(),
+  async (req, res) => {
+    try {
+      const { user_id, username, real_name } = req.body || {};
+      if (!user_id) return res.status(400).json({ ok:false, error:'missing user_id' });
+
+      const patch = {};
+      if (username) patch.username = username;
+      if (real_name) patch.real_name = real_name;
+
+      // ใช้ Apps Script helper ที่มีอยู่แล้ว
+      const resp = await callAppsScript('update_user', { user_id, ...patch });
+      return res.json({ ok:true, result: resp || null });
+    } catch (e) {
+      console.error('UPDATE_USER_ERR', e?.message || e);
+      res.status(500).json({ ok:false, error:'UPDATE_USER_ERR' });
     }
   }
 );
