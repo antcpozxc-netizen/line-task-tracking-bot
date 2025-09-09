@@ -577,7 +577,7 @@ function parseAssignLoose(text) {
   const remove = (re) => { body = body.replace(re, ' ').replace(/\s+/g, ' ').trim(); };
 
   // วันนี้/พรุ่งนี้ (สะกดผิดยอดนิยมด้วย)
-  let m = body.match(/\b(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)\b/);
+  let m = body.match(/(?:^|\s)(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)(?=\s|$)/);
   if (m) {
     relDay = (/^วันนี้$/.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้');
     remove(m[0]);
@@ -608,8 +608,12 @@ function parseAssignLoose(text) {
   // ----------- หา "ช่วงเวลา" แบบพูด -----------
   let timeStr = ''; // HH:mm
   // เที่ยง/เที่ยงครึ่ง/เที่ยงตรง
-  if (/เที่ยงครึ่ง/.test(body)) { timeStr = '12:30'; remove(/เที่ยงครึ่ง/g); }
-  else if (/เที่ยง(ตรง)?/.test(body)) { timeStr = '12:00'; remove(/เที่ยง(ตรง)?/g); }
+  // เที่ยง/เที่ยงตรง/เที่ยงครึ่ง  → เก็บเป็น timeStr เพื่อไปรวมกับ "วันนี้/พรุ่งนี้" ทีหลัง
+  if (/เที่ยงครึ่ง/.test(body)) {
+    timeStr = '12:30'; remove(/เที่ยงครึ่ง/g);
+  } else if (/เที่ยง(ตรง)?/.test(body)) {
+    timeStr = '12:00'; remove(/เที่ยง(ตรง)?/g);
+  }
 
   // บ่ายหนึ่ง/สอง/... [ครึ่ง]
   if (!timeStr) {
