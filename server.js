@@ -467,6 +467,7 @@ async function resolveAssignee(mention){
   return hit || null;
 }
 
+
 // ========== Natural deadline helper ==========
 function parseNaturalDue(s) {
   if (!s) return '';
@@ -494,14 +495,14 @@ function parseNaturalDue(s) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + add);
     let hh = 17, mm = 30;
 
-    if (m[3]) {                      // << ใช้ตัวเลขเวลาที่ระบุ ถ้ามี
-      hh = Number(m[3]);
-      mm = Number(m[4] || 0);
-    } else if (m[2]) {               // << มิฉะนั้นค่อยเช็ค "เที่ยง/เที่ยงครึ่ง"
+    // ให้ค่าที่เป็น "ตัวเลขเวลา" มาก่อน (9 / 9:30 / 9.30)
+    if (m[3]) {
+      hh = Number(m[3]); mm = Number(m[4] || 0);
+    } else if (m[2]) {
+      // แล้วค่อยเช็ค "เที่ยง/เที่ยงครึ่ง"
       if (/ครึ่ง/i.test(m[2])) { hh = 12; mm = 30; }
       else { hh = 12; mm = 0; }
     }
-
     return toISO(d, hh, mm);
   }
 
@@ -519,7 +520,8 @@ function parseNaturalDue(s) {
   if (m && m[1] in thaiDays) {
     const target = thaiDays[m[1]], cur = now.getDay();
     let diff = (target - cur + 7) % 7;
-    if (diff === 0) diff = 7; // ถ้าตรงวันนี้ → สัปดาห์หน้า
+    // ‘นี้’ และอยู่วันเดียวกัน → ไปสัปดาห์หน้า (ตามสเปค)
+    if (diff === 0) diff = 7;
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
     const hh = m[3] ? Number(m[3]) : 17, mm = m[4] ? Number(m[4]) : 30;
     return toISO(d, hh, mm);
@@ -535,20 +537,19 @@ function parseNaturalDue(s) {
 
   // hh[:.]mm เดี่ยว ๆ → วันนี้
   m = s.match(/^(\d{1,2})(?:[:.](\d{2}))$/);
-  if (m) {
-    return toISO(now, Number(m[1]), Number(m[2]));
-  }
+  if (m) return toISO(now, Number(m[1]), Number(m[2]));
 
   // ตัวเลขชั่วโมงเดี่ยว ๆ → วันนี้ hh:00
   m = s.match(/^(\d{1,2})$/);
-  if (m) {
-    return toISO(now, Number(m[1]), 0);
-  }
+  if (m) return toISO(now, Number(m[1]), 0);
 
   return s; // คืนดิบไปให้ชั้นนอก
 }
 
 
+
+
+// ========== Loose assignment parser (Thai free text) ==========
 // ========== Loose assignment parser (Thai free text) ==========
 function parseAssignLoose(text) {
   if (!text) return null;
@@ -594,13 +595,12 @@ function parseAssignLoose(text) {
   if (!deadline) {
     const m = body.match(/(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)\s*(เที่ยง(?:ตรง)?|เที่ยงครึ่ง|(\d{1,2})(?:[:.](\d{2}))?)/i);
     if (m) {
-      if (m[2] && !m[3]) {
-        const hhmm = /ครึ่ง/i.test(m[2]) ? '12:30' : '12:00';
-        deadline = parseNaturalDue(`${/^วันนี้$/i.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้'} ${hhmm}`);
-      } else {
+      if (m[3]) {
         const hh = String(m[3]).padStart(2,'0');
         const mm = String(m[4] || '0').padStart(2,'0');
         deadline = parseNaturalDue(`${/^วันนี้$/i.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้'} ${hh}:${mm}`);
+      } else {
+        deadline = parseNaturalDue(`${/^วันนี้$/i.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้'} ${/ครึ่ง/i.test(m[2])?'12:30':'12:00'}`);
       }
       rm(m[0]);
     }
@@ -663,6 +663,17 @@ function parseAssignLoose(text) {
     if (m) { deadline = parseNaturalDue(m[0]); rm(m[0]); }
   }
 
+  // เวลา “ตัวเลขล้วน” เช่น 16 / 9 / 9:30 / 9.30
+  if (!deadline && !timeStr) {
+    const m = body.match(/(^|[\s,;])(\d{1,2})(?:[:.](\d{2}))?($|[\s,;])/);
+    if (m) {
+      const hh = String(m[2]).padStart(2,'0');
+      const mm = String(m[3] || '0').padStart(2,'0');
+      timeStr = `${hh}:${mm}`;
+      rm(m[0].trim());
+    }
+  }
+
   // สรุป day/time → deadline
   if (!deadline && relDay && timeStr) deadline = parseNaturalDue(`${relDay} ${timeStr}`);
   if (!deadline && timeStr)          deadline = parseNaturalDue(`วันนี้ ${timeStr}`);
@@ -674,7 +685,6 @@ function parseAssignLoose(text) {
   }
 
   // ===== ล้าง token วัน/เวลา ที่ยังหลงเหลือใน detail =====
-  // (ทำซ้ำหลายแบบเพื่อครอบคลุม)
   const scrubbers = [
     /(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)/gi,
     /\b\d{1,2}[:.]\d{2}\b/g,                 // 09:00 / 9.30
@@ -693,6 +703,7 @@ function parseAssignLoose(text) {
   const detail = body || '-';
   return { assigneeName, detail, deadline, note };
 }
+
 
 
 // ── Parsers
