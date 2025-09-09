@@ -61,6 +61,10 @@ export default function AdminUsersSplitPage() {
   const [confirm, setConfirm] = useState(null); // { user_id, name }
   const [snack, setSnack] = useState({ open:false, msg:'', sev:'success' });
   const [refreshedAt, setRefreshedAt] = useState(null);
+  const [isComposing, setIsComposing] = useState(false);
+
+  const [working, setWorking] = useState({ on: false, msg: '' });
+
 
   // sort state (ใช้ร่วมกันทั้ง 3 ตาราง)
   const [orderBy, setOrderBy] = useState('updated_at');
@@ -139,6 +143,7 @@ export default function AdminUsersSplitPage() {
     }
 
     setBusy(true);
+      setWorking({ on: true, msg: 'กำลังเปลี่ยนสิทธิ์...' });
     try {
       await setUserRole(u.user_id, role);
       setSnack({ open:true, msg:'อัปเดตบทบาทแล้ว', sev:'success' });
@@ -147,19 +152,23 @@ export default function AdminUsersSplitPage() {
       setSnack({ open:true, msg:'เปลี่ยนบทบาทไม่สำเร็จ', sev:'error' });
     } finally {
       setBusy(false);
+      setWorking({ on: false, msg: '' });
     }
   };
 
 
   const doStatus = async (u, status) => {
     setBusy(true);
+      setWorking({ on: true, msg: 'กำลังเปลี่ยนสถานะ...' });
     try {
       await setUserStatus(u.user_id, status);
       setSnack({ open:true, msg:'อัปเดตสถานะแล้ว', sev:'success' });
       await load();
     } catch {
       setSnack({ open:true, msg:'อัปเดตสถานะไม่สำเร็จ', sev:'error' });
+    } finally {
       setBusy(false);
+      setWorking({ on: false, msg: '' });
     }
   };
 
@@ -225,6 +234,7 @@ export default function AdminUsersSplitPage() {
   const saveEdit = async (u) => {
     if (!u) return;
     setBusy(true);
+      setWorking({ on: true, msg: 'กำลังบันทึกโปรไฟล์...' });
     try {
       await updateUserProfile(u.user_id, {
         username: draftUsername,
@@ -237,6 +247,7 @@ export default function AdminUsersSplitPage() {
       setSnack({ open:true, msg:'อัปเดตโปรไฟล์ไม่สำเร็จ', sev:'error' });
     } finally {
       setBusy(false);
+      setWorking({ on: false, msg: '' });
     }
   };
 
@@ -281,10 +292,12 @@ export default function AdminUsersSplitPage() {
                           value={draftUsername}
                           disabled={!editable || busy}
                           onChange={(e)=>setDraftUsername(e.target.value)}
+                          onCompositionStart={()=>setIsComposing(true)}
+                          onCompositionEnd={()=>setIsComposing(false)}
                           onKeyDown={(e)=>{
-                            if (e.key === 'Enter') saveEdit(u);
-                            if (e.key === 'Escape') cancelEdit();
-                            e.stopPropagation(); // กัน event ไปกวน table
+                            if (!isComposing && e.key === 'Enter') saveEdit(u);
+                            if (!isComposing && e.key === 'Escape') cancelEdit();
+                            e.stopPropagation();
                           }}
                           inputProps={{ style:{ padding: '6px 8px' } }}
                           sx={{ width:{ xs:140, md:180 } }}
@@ -301,13 +314,15 @@ export default function AdminUsersSplitPage() {
                           value={draftName}
                           disabled={!editable || busy}
                           onChange={(e)=>setDraftName(e.target.value)}
+                          onCompositionStart={()=>setIsComposing(true)}
+                          onCompositionEnd={()=>setIsComposing(false)}
                           onKeyDown={(e)=>{
-                            if (e.key === 'Enter') saveEdit(u);
-                            if (e.key === 'Escape') cancelEdit();
+                            if (!isComposing && e.key === 'Enter') saveEdit(u);
+                            if (!isComposing && e.key === 'Escape') cancelEdit();
                             e.stopPropagation();
                           }}
                           inputProps={{ style:{ padding: '6px 8px' } }}
-                          sx={{ width:{ xs:220, md:300 } }}   
+                          sx={{ width:{ xs:220, md:300 } }}  
                         />
                       ) : (
                         <Box sx={{ whiteSpace:'nowrap' }}>{u.real_name || '-'}</Box>
@@ -404,6 +419,13 @@ export default function AdminUsersSplitPage() {
           >
             ดูงานที่ฉันสั่ง
           </Button>
+          {working.on && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <span className="MuiCircularProgress-root MuiCircularProgress-indeterminate"
+                    style={{ width:16, height:16, borderWidth:2, borderStyle:'solid', borderRadius:'50%', borderColor:'transparent' }}/>
+              <Typography variant="caption" color="text.secondary">{working.msg}</Typography>
+            </Stack>
+          )}
           {refreshedAt && (
             <Typography variant="caption" color="text.secondary" sx={{ display:{ xs:'none', sm:'block' } }}>
               อัปเดตล่าสุด {new Intl.DateTimeFormat('th-TH',{ dateStyle:'short', timeStyle:'short'}).format(refreshedAt)}

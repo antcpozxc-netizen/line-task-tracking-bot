@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 3000;
 const TZ   = process.env.TZ || 'Asia/Bangkok';
 const assignPreset = new Map();
 
+
 // ── ENV
 const {
   // Messaging API
@@ -953,7 +954,8 @@ app.post('/webhook/line', async (req,res)=>{
           } else {
             // 3) ออก magic token อายุสั้น
             const display = user?.real_name || user?.username || (await getDisplayName(userId)) || 'User';
-            const { token } = issueMagicToken({ uid: userId, name: display, role }, '10m');
+            const MAGIC_TTL = process.env.MAGIC_TTL || '30d'; // ปรับตามต้องการ เช่น '2h','7d','30d'
+            const { token } = issueMagicToken({ uid: userId, name: display, role }, MAGIC_TTL);
             const url = `${(PUBLIC_APP_URL || '').replace(/\/$/, '')}/auth/magic?t=${encodeURIComponent(token)}`;
 
             // ตอบเป็น Flex ปุ่ม “เว็บจัดการผู้ใช้งาน” (ซ่อน URL ยาวไว้หลังปุ่ม)
