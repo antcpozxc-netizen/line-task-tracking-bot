@@ -474,32 +474,35 @@ function parseNaturalDue(s) {
 
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
-  // ค่าเริ่มต้นให้ดูใช้งานจริง: วันนี้=17:30, พรุ่งนี้=09:00, วันไทยอื่นๆ=17:30
   const toISO = (d, h = 17, m = 30) =>
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(h)}:${pad(m)}:00`;
 
   let m;
 
   // +Nd [HH:mm]
-  m = s.match(/^\+(\d+)d(?:\s+(\d{1,2}):(\d{2}))?$/);
+  m = s.match(/^\+(\d+)d(?:\s+(\d{1,2})[:.](\d{2}))?$/i);
   if (m) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + Number(m[1]));
     const hh = m[2] ? Number(m[2]) : 17, mm = m[3] ? Number(m[3]) : 30;
     return toISO(d, hh, mm);
   }
 
-  // วันนี้/พรุ่งนี้ [HH:mm]  → วันนี้ default 17:30, พรุ่งนี้ default 09:00
-  m = s.match(/^(วันนี้|พรุ่งนี้)(?:\s+(\d{1,2}):(\d{2}))?$/);
+  // วันนี้/พรุ่งนี้ [HH:mm]  (รองรับ 9, 9:00, 9.00, เที่ยง, เที่ยงครึ่ง)
+  m = s.match(/^(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)(?:\s+(เที่ยง(?:ตรง)?|เที่ยงครึ่ง|(\d{1,2})(?:[:.](\d{2}))?))?$/i);
   if (m) {
-    const add = m[1] === 'พรุ่งนี้' ? 1 : 0;
+    const add = /^วันนี้$/i.test(m[1]) ? 0 : 1;
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + add);
-    const hasTime = !!m[2];
-    const hh = hasTime ? Number(m[2]) : (add ? 9 : 17);
-    const mm = hasTime ? Number(m[3]) : (add ? 0 : 30);
+    let hh = 17, mm = 30;
+    if (m[2]) {
+      if (/เที่ยงครึ่ง/i.test(m[2])) { hh = 12; mm = 30; }
+      else { hh = 12; mm = 0; }
+    } else if (m[3]) {
+      hh = Number(m[3]); mm = Number(m[4] || 0);
+    }
     return toISO(d, hh, mm);
   }
 
-  // "ก่อนบ่าย 3" / "บ่าย 3[:mm]" → วันนี้ 15:00 (หรือเวลาที่ระบุ)
+  // "ก่อนบ่าย 3" / "บ่าย 3[:mm]"
   m = s.match(/^(?:ก่อน)?บ่าย\s*(\d{1,2})(?::(\d{2}))?$/);
   if (m) {
     const hr = Math.min(12 + Number(m[1]), 23);
@@ -507,57 +510,58 @@ function parseNaturalDue(s) {
     return toISO(now, hr, mn);
   }
 
-  // [วันไทย]นี้ [HH:mm]  (ยอมให้มี "วัน" นำหน้า)
+  // [วันไทย]นี้/หน้า [HH:mm]
   const thaiDays = { 'อาทิตย์':0,'จันทร์':1,'อังคาร':2,'พุธ':3,'พฤหัส':4,'ศุกร์':5,'เสาร์':6 };
-  m = s.match(/^(?:วัน)?([ก-๙]+)นี้(?:\s+(\d{1,2}):(\d{2}))?$/);
+  m = s.match(/^(?:วัน)?([ก-๙]+)(นี้|หน้า)(?:\s+(\d{1,2})(?:[:.](\d{2}))?)?$/);
   if (m && m[1] in thaiDays) {
     const target = thaiDays[m[1]], cur = now.getDay();
     let diff = (target - cur + 7) % 7;
-    if (diff === 0) diff = 7; // ถ้าตรงวันนี้ ให้ขยับเป็นสัปดาห์หน้า
+    if (diff === 0) diff = 7; // ถ้าตรงวันนี้ → สัปดาห์หน้า
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
-    const hh = m[2] ? Number(m[2]) : 17, mm = m[3] ? Number(m[3]) : 30;
+    const hh = m[3] ? Number(m[3]) : 17, mm = m[4] ? Number(m[4]) : 30;
     return toISO(d, hh, mm);
   }
 
-  // [วันไทย]หน้า [HH:mm]  (ยอมให้มี "วัน" นำหน้า)
-  m = s.match(/^(?:วัน)?([ก-๙]+)หน้า(?:\s+(\d{1,2}):(\d{2}))?$/);
-  if (m && m[1] in thaiDays) {
-    const target = thaiDays[m[1]], cur = now.getDay();
-    let diff = (target - cur + 7) % 7;
-    if (diff === 0) diff = 7; // ถ้าวันเดียวกัน → ไปสัปดาห์หน้า
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
-    const hh = m[2] ? Number(m[2]) : 17, mm = m[3] ? Number(m[3]) : 30;
-    return toISO(d, hh, mm);
-  }
-
-  // dd/MM หรือ dd/MM HH:mm (ปีปัจจุบัน)
-  m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?$/);
+  // dd/MM หรือ dd/MM HH[:.]mm (ปีปัจจุบัน)
+  m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2})(?:[:.](\d{2}))?)?$/);
   if (m) {
     const y = now.getFullYear(), mo = Number(m[2]) - 1, da = Number(m[1]);
     const hh = m[3] ? Number(m[3]) : 17, mm = m[4] ? Number(m[4]) : 30;
     return toISO(new Date(y, mo, da), hh, mm);
   }
 
-  // ไม่เข้าเงื่อนไขใด ๆ → ส่งกลับให้ parser เดิมจัดการ
-  return s;
+  // hh[:.]mm เดี่ยว ๆ → วันนี้
+  m = s.match(/^(\d{1,2})(?:[:.](\d{2}))$/);
+  if (m) {
+    return toISO(now, Number(m[1]), Number(m[2]));
+  }
+
+  // ตัวเลขชั่วโมงเดี่ยว ๆ → วันนี้ hh:00
+  m = s.match(/^(\d{1,2})$/);
+  if (m) {
+    return toISO(now, Number(m[1]), 0);
+  }
+
+  return s; // คืนดิบไปให้ชั้นนอก
 }
+
 
 // ========== Loose assignment parser (Thai free text) ==========
 function parseAssignLoose(text) {
   if (!text) return null;
   const raw = String(text).trim();
 
-  // ต้องมี @mention ที่ไหนก็ได้
   const mUser = raw.match(/@([^\s:：]+)/);
   if (!mUser) return null;
 
   const assigneeName = mUser[1].trim();
   let body = raw.replace(mUser[0], ' ').replace(/\s+/g, ' ').trim();
 
-  // ฟิลเลอร์/คำช่วยยอดฮิต
+  // ฟิลเลอร์ยอดฮิต (ไม่ใช้ \b เพราะไม่เวิร์กกับไทย)
   body = body
-    .replace(/\bของาน\b/ig, ' ')
-    .replace(/\b(ช่วยทำ|ช่วยเช็ค|ช่วยแก้|ช่วยอัปเดต|ช่วยตรวจ|ช่วย|ทำ|จัดการ|ขอ)\b/ig, ' ')
+    .replace(/(?:^|[\s,;])ของาน(?=$|[\s,;])/gi, ' ')
+    .replace(/(?:^|[\s,;])(ช่วยทำ|ช่วยเช็ค|ช่วยแก้|ช่วยอัปเดต|ช่วยตรวจ|ช่วย|จัดการ|ขอ)(?=$|[\s,;])/gi, ' ')
+    .replace(/(?:^|[\s,;])ทำ(?=$|[\s,;])/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -571,99 +575,96 @@ function parseAssignLoose(text) {
     body = body.replace(/(ไม่รีบ(?:นะ)?|normal|ค่อยทำ)/ig, ' ');
   }
 
-  // ----------- หา "วัน" แบบพูด -----------
+  // helper: ลบ token ด้วย boundary แบบไทย
+  const rm = (tok) => {
+    if (!tok) return;
+    const esc = String(tok).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(^|[\\s,;:()\\[\\]{}"'\`])${esc}(?=$|[\\s,;:()\\[\\]{}"'\`])`, 'giu');
+    body = body.replace(re, ' ').replace(/\s+/g, ' ').trim();
+  };
+
   let deadline = '';
-  let relDay = ''; // '' | 'วันนี้' | 'พรุ่งนี้'
-  const remove = (re) => { body = body.replace(re, ' ').replace(/\s+/g, ' ').trim(); };
+  let relDay = '';     // วันนี้ | พรุ่งนี้
+  let timeStr = '';    // HH:mm
 
-  // วันนี้/พรุ่งนี้ (รวมสะกดผิดยอดนิยม) — ใช้ boundary กันติดกับคำอื่น
-  let m = body.match(/(?:^|\s)(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)(?=\s|$)/);
-  if (m) {
-    relDay = (/^วันนี้$/.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้');
-    remove(m[0]);
+  // วันนี้/พรุ่งนี้
+  {
+    const m = body.match(/(^|[\s,;])(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)(?=($|[\s,;]))/i);
+    if (m) { relDay = /^วันนี้$/i.test(m[2]) ? 'วันนี้' : 'พรุ่งนี้'; rm(m[2]); }
   }
 
-  // วันไทยนี้/หน้า + เวลา (เช่น จันทร์หน้า, พุธนี้ 14:00)
+  // วันนี้/พรุ่งนี้ + เลขเวลา (9, 9:00, 9.00)
   if (!deadline) {
-    m = body.match(/(?:วัน)?(อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)(นี้|หน้า)(?:\s*(\d{1,2})(?::(\d{2}))?)?/);
+    const m = body.match(/(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)\s*(\d{1,2})(?:[:.](\d{2}))?/i);
     if (m) {
-      const hasTime = !!m[3];
-      const str = hasTime
-        ? `${m[1]}${m[2]} ${String(m[3]).padStart(2,'0')}:${String(m[4]||'0').padStart(2,'0')}`
-        : `${m[1]}${m[2]}`;
-      deadline = parseNaturalDue(str);
-      remove(m[0]);
+      const hh = String(m[2]).padStart(2,'0');
+      const mm = String(m[3] || '0').padStart(2,'0');
+      deadline = parseNaturalDue(`${/^วันนี้$/i.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้'} ${hh}:${mm}`);
+      rm(m[0]);
+      relDay = ''; // consume แล้ว
     }
   }
 
-  // dd/MM หรือ dd/MM HH:mm (ปีปัจจุบัน)
-  if (!deadline) {
-    m = body.match(/\b(\d{1,2}\/\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?\b/);
+  // เวลาแบบพูด: เที่ยง/เที่ยงครึ่ง
+  if (!timeStr) {
+    const m = body.match(/เที่ยง(?:ตรง)?|เที่ยงครึ่ง/i);
     if (m) {
-      deadline = parseNaturalDue(m[0]);
-      remove(m[0]);
+      timeStr = /ครึ่ง/i.test(m[0]) ? '12:30' : '12:00';
+      rm(m[0]);
     }
   }
-
-  // ----------- หา "ช่วงเวลา" แบบพูด -----------
-  let timeStr = ''; // HH:mm
-
-  // เที่ยง / เที่ยงครึ่ง / เที่ยงตรง
-  if (/เที่ยงครึ่ง/.test(body)) { timeStr = '12:30'; remove(/เที่ยงครึ่ง/g); }
-  else if (/เที่ยง(ตรง)?/.test(body)) { timeStr = '12:00'; remove(/เที่ยง(ตรง)?/g); }
 
   // บ่ายหนึ่ง/สอง/... [ครึ่ง]
   if (!timeStr) {
-    m = body.match(/บ่าย\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|12|\d{1,2})\s*(โมง)?(ครึ่ง)?/);
+    const m = body.match(/บ่าย\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|12|\d{1,2})\s*(โมง)?(ครึ่ง)?/i);
     if (m) {
       const map = { หนึ่ง:13, สอง:14, สาม:15, สี่:16, ห้า:17, หก:18, เจ็ด:19, แปด:20, เก้า:21, สิบ:22, สิบเอ็ด:23 };
-      const hh = map[m[1]] ?? (12 + Number(m[1]));
+      const hh = map[m[1].toLowerCase?.()] ?? (12 + Number(m[1]));
       const mm = m[3] ? 30 : 0;
       timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-      remove(m[0]);
+      rm(m[0]);
     }
   }
 
-  // X โมง [เช้า|เย็น] [ครึ่ง]  หรือ  X ทุ่ม [ครึ่ง]
+  // X โมง [เช้า|เย็น] [ครึ่ง]  |  X ทุ่ม [ครึ่ง]
   if (!timeStr) {
-    m = body.match(/(\d{1,2})\s*โมง\s*(เช้า|เย็น)?(ครึ่ง)?|(\d{1,2})\s*ทุ่ม(ครึ่ง)?/);
+    const m = body.match(/(\d{1,2})\s*โมง\s*(เช้า|เย็น)?(ครึ่ง)?|(\d{1,2})\s*ทุ่ม(ครึ่ง)?/i);
     if (m) {
       let hh, mm = (m[3] || m[5]) ? 30 : 0;
-      if (m[1]) { // X โมง ...
+      if (m[1]) { // X โมง
         hh = Number(m[1]);
-        if (m[2] === 'เย็น' && hh <= 6) hh += 12;
-      } else if (m[4]) { // X ทุ่ม
+        if ((m[2] || '').toLowerCase() === 'เย็น' && hh <= 6) hh += 12;
+      } else {    // X ทุ่ม
         hh = 18 + Number(m[4]); // 1 ทุ่ม = 19
       }
       timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-      remove(m[0]);
+      rm(m[0]);
     }
   }
 
-  // วันนี้/พรุ่งนี้ + HH:mm (เลขตรง ๆ)
+  // dd/MM หรือ dd/MM HH[:.]mm
   if (!deadline) {
-    m = body.match(/(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)\s*(\d{1,2})(?::(\d{2}))?/);
-    if (m) {
-      const dword = /^วันนี้$/.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้';
-      const hh = String(m[2]).padStart(2,'0');
-      const mm = String(m[3]||'0').padStart(2,'0');
-      deadline = parseNaturalDue(`${dword} ${hh}:${mm}`);
-      remove(m[0]);
-      relDay = '';
-    }
+    const m = body.match(/\b(\d{1,2}\/\d{1,2})(?:\s+(\d{1,2})(?::|\.)(\d{2}))?\b/);
+    if (m) { deadline = parseNaturalDue(m[0]); rm(m[0]); }
   }
 
-  // รวม "วัน" + "ช่วงเวลา" หรือเติมค่าปริยาย
+  // สรุป day/time → deadline
   if (!deadline && relDay && timeStr) deadline = parseNaturalDue(`${relDay} ${timeStr}`);
   if (!deadline && timeStr)          deadline = parseNaturalDue(`วันนี้ ${timeStr}`);
   if (!deadline && relDay)           deadline = parseNaturalDue(relDay);
 
-  // ล้างคำฟิลเลอร์ปลายประโยค (กันคำวัน/เวลาเหลือหลุดมา)
-  body = body.replace(/\b(ก่อน|ภายใน|นะ|ด้วย)\b/g, ' ').replace(/\s+/g,' ').trim();
+  // กัน miss case: ถ้ามีคำว่า "พรุ่งนี้" อยู่ใน raw เดิม และเรารู้เวลา แต่ relDay ว่าง → ใช้พรุ่งนี้
+  if (!deadline && timeStr && /(พรุ่งนี้|พรุ้งนี้|พรุงนี้)/i.test(raw)) {
+    deadline = parseNaturalDue(`พรุ่งนี้ ${timeStr}`);
+  }
+
+  // เก็บกวาดฟิลเลอร์ปลายประโยค + เว้นวรรค
+  body = body.replace(/(^|[\s,;])(ก่อน|ภายใน|นะ|ด้วย)(?=($|[\s,;]))/g, ' ').replace(/\s+/g,' ').trim();
 
   const detail = body || '-';
   return { assigneeName, detail, deadline, note };
 }
+
 
 
 
