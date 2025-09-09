@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableHead, TableRow, TableCell,
   TableBody, TableContainer, Chip, Select, MenuItem, IconButton, Divider, Tooltip,
-  Snackbar, Alert, Button, Stack ,TextField
+  Snackbar, Alert, Button, Stack ,TextField, CircularProgress
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -62,8 +62,14 @@ export default function AdminUsersSplitPage() {
   const [snack, setSnack] = useState({ open:false, msg:'', sev:'success' });
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [isComposing, setIsComposing] = useState(false);
+  const [activeField, setActiveField] = useState(null); // 'username' | 'name'
+  const usernameRef = useRef(null);
+  const nameRef = useRef(null);
+
 
   const [working, setWorking] = useState({ on: false, msg: '' });
+
+  
 
 
   // sort state (ใช้ร่วมกันทั้ง 3 ตาราง)
@@ -224,7 +230,9 @@ export default function AdminUsersSplitPage() {
     setEditingId(u.user_id);
     setDraftUsername(u.username || '');
     setDraftName(u.real_name || '');
+    
   };
+
   const cancelEdit = () => {
     setEditingId(null);
     setDraftUsername('');
@@ -292,6 +300,9 @@ export default function AdminUsersSplitPage() {
                           value={draftUsername}
                           disabled={!editable || busy}
                           onChange={(e)=>setDraftUsername(e.target.value)}
+                          onMouseDown={(e)=>e.stopPropagation()}
+                          inputRef={usernameRef}
+                          onFocus={()=>setActiveField('username')}
                           onCompositionStart={()=>setIsComposing(true)}
                           onCompositionEnd={()=>setIsComposing(false)}
                           onKeyDown={(e)=>{
@@ -314,6 +325,9 @@ export default function AdminUsersSplitPage() {
                           value={draftName}
                           disabled={!editable || busy}
                           onChange={(e)=>setDraftName(e.target.value)}
+                          onMouseDown={(e)=>e.stopPropagation()}
+                          inputRef={nameRef}
+                          onFocus={()=>setActiveField('name')}
                           onCompositionStart={()=>setIsComposing(true)}
                           onCompositionEnd={()=>setIsComposing(false)}
                           onKeyDown={(e)=>{
@@ -421,8 +435,7 @@ export default function AdminUsersSplitPage() {
           </Button>
           {working.on && (
             <Stack direction="row" spacing={1} alignItems="center">
-              <span className="MuiCircularProgress-root MuiCircularProgress-indeterminate"
-                    style={{ width:16, height:16, borderWidth:2, borderStyle:'solid', borderRadius:'50%', borderColor:'transparent' }}/>
+              <CircularProgress size={16} />
               <Typography variant="caption" color="text.secondary">{working.msg}</Typography>
             </Stack>
           )}
