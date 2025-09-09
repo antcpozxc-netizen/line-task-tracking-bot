@@ -493,12 +493,15 @@ function parseNaturalDue(s) {
     const add = /^วันนี้$/i.test(m[1]) ? 0 : 1;
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + add);
     let hh = 17, mm = 30;
-    if (m[2]) {
-      if (/เที่ยงครึ่ง/i.test(m[2])) { hh = 12; mm = 30; }
+
+    if (m[3]) {                      // << ใช้ตัวเลขเวลาที่ระบุ ถ้ามี
+      hh = Number(m[3]);
+      mm = Number(m[4] || 0);
+    } else if (m[2]) {               // << มิฉะนั้นค่อยเช็ค "เที่ยง/เที่ยงครึ่ง"
+      if (/ครึ่ง/i.test(m[2])) { hh = 12; mm = 30; }
       else { hh = 12; mm = 0; }
-    } else if (m[3]) {
-      hh = Number(m[3]); mm = Number(m[4] || 0);
     }
+
     return toISO(d, hh, mm);
   }
 
