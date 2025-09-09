@@ -671,6 +671,7 @@ function parseAssignLoose(text) {
 
 
 
+
 // ── Parsers
 function parseRegister(text){
   // รองรับ: ลงทะเบียน / สมัคร / ลงชื่อ / register / signup  + จะมีหรือไม่มี ":" ก็ได้
