@@ -554,14 +554,14 @@ function parseAssignLoose(text) {
   const assigneeName = mUser[1].trim();
   let body = raw.replace(mUser[0], ' ').replace(/\s+/g, ' ').trim();
 
-  // คำฟิลเลอร์/คำช่วยยอดฮิต เอาออกให้เหลือเฉพาะรายละเอียดงาน
+  // ฟิลเลอร์/คำช่วยยอดฮิต
   body = body
     .replace(/\bของาน\b/ig, ' ')
     .replace(/\b(ช่วยทำ|ช่วยเช็ค|ช่วยแก้|ช่วยอัปเดต|ช่วยตรวจ|ช่วย|ทำ|จัดการ|ขอ)\b/ig, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // แท็กเร่งด่วน/ปกติ
+  // NOTE / ความเร่งด่วน
   let note = '';
   if (/(ด่วน(ที่สุด|สุด)?|urgent)/i.test(body)) {
     note = '[URGENT]';
@@ -571,31 +571,19 @@ function parseAssignLoose(text) {
     body = body.replace(/(ไม่รีบ(?:นะ)?|normal|ค่อยทำ)/ig, ' ');
   }
 
-  // เก็บกวาดฟิลเลอร์ปลายประโยค
-  body = body
-    .replace(/(?:^|\s)(ก่อน|ภายใน|นะ|ด้วย)(?=\s|$)/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
+  // ----------- หา "วัน" แบบพูด -----------
   let deadline = '';
-  const remove = re => { body = body.replace(re, ' ').replace(/\s+/g, ' ').trim(); };
+  let relDay = ''; // '' | 'วันนี้' | 'พรุ่งนี้'
+  const remove = (re) => { body = body.replace(re, ' ').replace(/\s+/g, ' ').trim(); };
 
-  // ——— Deadline (ภาษาพูดไทย) ———
-
-  // วันนี้/พรุ่งนี้ [HH:mm] (+ รองรับสะกดผิดยอดนิยม: พรุ้งนี้/พรุงนี้)
-  let m = body.match(/(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)(?:\s*(\d{1,2})(?::(\d{2}))?)?/);
+  // วันนี้/พรุ่งนี้ (สะกดผิดยอดนิยมด้วย)
+  let m = body.match(/\b(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)\b/);
   if (m) {
-    // map คำสะกดผิดให้เป็น "พรุ่งนี้"
-    const dword = /^(พรุ้งนี้|พรุงนี้)$/.test(m[1]) ? 'พรุ่งนี้' : m[1];
-    const hasTime = !!m[2];
-    const str = hasTime
-      ? `${dword} ${String(m[2]).padStart(2,'0')}:${String(m[3]||'0').padStart(2,'0')}`
-      : dword; // ไม่มีเวลา → ใส่ default (วันนี้ 17:30, พรุ่งนี้ 09:00)
-    deadline = parseNaturalDue(str);
+    relDay = (/^วันนี้$/.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้');
     remove(m[0]);
   }
 
-  // [วันไทย](นี้|หน้า) [HH:mm] เช่น "จันทร์หน้า", "พุธนี้ 14:00"
+  // วันไทยนี้/หน้า + เวลา (จันทร์หน้า, พุธนี้ 14:00)
   if (!deadline) {
     m = body.match(/(?:วัน)?(อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)(นี้|หน้า)(?:\s*(\d{1,2})(?::(\d{2}))?)?/);
     if (m) {
@@ -608,64 +596,7 @@ function parseAssignLoose(text) {
     }
   }
 
-  // ก่อนบ่าย 3 / บ่าย 3[:mm] → วันนี้
-  if (!deadline) {
-    m = body.match(/(ก่อน)?\s*บ่าย\s*(\d{1,2})(?::(\d{2}))?/i);
-    if (m) {
-      let hh = Number(m[2]); if (hh >= 1 && hh <= 11) hh += 12;
-      const mm = m[3] ? Number(m[3]) : 0;
-      const now = new Date();
-      const dstr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`;
-      deadline = dstr;
-      remove(m[0]);
-    }
-  }
-
-  // เวลาแบบคำพูด: เที่ยง, เที่ยงตรง, เที่ยงครึ่ง, บ่ายโมง, บ่ายสอง/สาม..., เช้า, เย็น, [X]โมง(เช้า|เย็น)
-  if (!deadline) {
-    // เที่ยง/เที่ยงตรง/เที่ยงครึ่ง
-    if (/เที่ยงครึ่ง/.test(body)) {
-      deadline = parseNaturalDue('วันนี้ 12:30'); remove(/เที่ยงครึ่ง/g);
-    } else if (/เที่ยง(ตรง)?/.test(body)) {
-      deadline = parseNaturalDue('วันนี้ 12:00'); remove(/เที่ยง(ตรง)?/g);
-    }
-  }
-  if (!deadline) {
-    // บ่ายโมง/บ่ายสอง/บ่ายสาม...
-    m = body.match(/บ่าย\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|12|\d{1,2})\s*(โมง)?(ครึ่ง)?/);
-    if (m) {
-      const map = { หนึ่ง:13, สอง:14, สาม:15, สี่:16, ห้า:17, หก:18, เจ็ด:19, แปด:20, เก้า:21, สิบ:22, สิบเอ็ด:23 };
-      let hh = map[m[1]] ?? (12 + Number(m[1]));
-      let mm = m[3] ? 30 : 0;
-      deadline = parseNaturalDue(`วันนี้ ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
-      remove(m[0]);
-    }
-  }
-  if (!deadline) {
-    // X โมงเช้า/เย็น, X ทุ่ม
-    m = body.match(/(\d{1,2})\s*โมง\s*(เช้า|เย็น)?(ครึ่ง)?|(\d{1,2})\s*ทุ่ม(ครึ่ง)?/);
-    if (m) {
-      let hh, mm = (m[3] || m[5]) ? 30 : 0;
-      if (m[1]) {
-        // โมงเช้า/เย็น
-        hh = Number(m[1]);
-        if (m[2] === 'เย็น') {
-          if (hh === 12) hh = 12; else if (hh <= 6) hh += 12; // 1–6 → 13–18
-        } else { // เช้า หรือไม่ระบุ → 1–11 เหมือนช่วงเช้า
-          if (hh === 12) hh = 12;
-        }
-      } else if (m[4]) {
-        // ทุ่ม = 19.. (1 ทุ่ม = 19)
-        hh = 18 + Number(m[4]);
-      }
-      if (hh) {
-        deadline = parseNaturalDue(`วันนี้ ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
-        remove(m[0]);
-      }
-    }
-  }
-
-  // รูป dd/MM หรือ dd/MM HH:mm → ปีนี้
+  // dd/MM หรือ dd/MM HH:mm (ปีปัจจุบัน)
   if (!deadline) {
     m = body.match(/\b(\d{1,2}\/\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?\b/);
     if (m) {
@@ -674,18 +605,67 @@ function parseAssignLoose(text) {
     }
   }
 
-  // ถ้ายังไม่ได้ แต่มี "วันนี้/พรุ่งนี้" ลอย ๆ → ให้ default
-  if (!deadline) {
-    if (/วันนี้/.test(body))       { deadline = parseNaturalDue('วันนี้');   remove(/วันนี้/); }
-    else if (/(พรุ่งนี้|พรุ้งนี้|พรุงนี้)/.test(body)) { deadline = parseNaturalDue('พรุ่งนี้'); remove(/(พรุ่งนี้|พรุ้งนี้|พรุงนี้)/g); }
+  // ----------- หา "ช่วงเวลา" แบบพูด -----------
+  let timeStr = ''; // HH:mm
+  // เที่ยง/เที่ยงครึ่ง/เที่ยงตรง
+  if (/เที่ยงครึ่ง/.test(body)) { timeStr = '12:30'; remove(/เที่ยงครึ่ง/g); }
+  else if (/เที่ยง(ตรง)?/.test(body)) { timeStr = '12:00'; remove(/เที่ยง(ตรง)?/g); }
+
+  // บ่ายหนึ่ง/สอง/... [ครึ่ง]
+  if (!timeStr) {
+    m = body.match(/บ่าย\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|12|\d{1,2})\s*(โมง)?(ครึ่ง)?/);
+    if (m) {
+      const map = { หนึ่ง:13, สอง:14, สาม:15, สี่:16, ห้า:17, หก:18, เจ็ด:19, แปด:20, เก้า:21, สิบ:22, สิบเอ็ด:23 };
+      let hh = map[m[1]] ?? (12 + Number(m[1]));
+      let mm = m[3] ? 30 : 0;
+      timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+      remove(m[0]);
+    }
   }
 
-  // ตัดคำฟิลเลอร์ปลายประโยครอบสุดท้าย
+  // X โมง [เช้า|เย็น] [ครึ่ง]  หรือ  X ทุ่ม [ครึ่ง]
+  if (!timeStr) {
+    m = body.match(/(\d{1,2})\s*โมง\s*(เช้า|เย็น)?(ครึ่ง)?|(\d{1,2})\s*ทุ่ม(ครึ่ง)?/);
+    if (m) {
+      let hh, mm = (m[3] || m[5]) ? 30 : 0;
+      if (m[1]) { // X โมง ...
+        hh = Number(m[1]);
+        if (m[2] === 'เย็น') { if (hh <= 6) hh += 12; }
+      } else if (m[4]) { // X ทุ่ม
+        hh = 18 + Number(m[4]); // 1 ทุ่ม = 19
+      }
+      timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+      remove(m[0]);
+    }
+  }
+
+  // วันนี้/พรุ่งนี้ + HH:mm (เลขตรง ๆ)
+  if (!deadline) {
+    m = body.match(/(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)\s*(\d{1,2})(?::(\d{2}))?/);
+    if (m) {
+      const dword = /^วันนี้$/.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้';
+      const hh = String(m[2]).padStart(2,'0');
+      const mm = String(m[3]||'0').padStart(2,'0');
+      deadline = parseNaturalDue(`${dword} ${hh}:${mm}`);
+      remove(m[0]);
+      relDay = '';
+    }
+  }
+
+  // รวม "วัน" + "ช่วงเวลา"
+  if (!deadline && relDay && timeStr) deadline = parseNaturalDue(`${relDay} ${timeStr}`);
+  // ถ้ามีแค่เวลา → วันนี้
+  if (!deadline && timeStr)       deadline = parseNaturalDue(`วันนี้ ${timeStr}`);
+  // ถ้ามีแค่วัน → default วันนี้ 17:30 / พรุ่งนี้ 09:00
+  if (!deadline && relDay)        deadline = parseNaturalDue(relDay);
+
+  // ล้างคำฟิลเลอร์ปลายประโยค
   body = body.replace(/\b(ก่อน|ภายใน|นะ|ด้วย)\b/g, ' ').replace(/\s+/g,' ').trim();
 
   const detail = body || '-';
   return { assigneeName, detail, deadline, note };
 }
+
 
 
 
@@ -1615,71 +1595,83 @@ app.post('/webhook/line', async (req,res)=>{
 
 
       // มอบหมายงาน → แสดงการ์ด Preview ก่อนยืนยัน (ซ่อนปุ่มสถานะ + ไม่แสดง TMP ID)
-      {
-        let assign = parseAssign(text);         // แบบฟอร์ม @user: งาน | กำหนดส่ง: ...
-        if (!assign) assign = parseAssignLoose(text);  // แบบภาษาพูด @user งาน ... วันจันทร์หน้า
-        if (assign) {
-          const assignee = await resolveAssignee(assign.assigneeName);
+    {
+      // เรียกแบบภาษาพูดก่อน (ไม่ต้องใส่ :)
+      let assign = parseAssignLoose(text);
+      // ถ้าไม่เข้า ค่อยลองแบบฟอร์มเดิม @user: งาน | กำหนดส่ง: ...
+      if (!assign) assign = parseAssign(text);
 
-          if (!assignee) {
-            const r = await callAppsScript('list_users', {});
-            const candidates = (r.users||[]).filter(u =>
-              (u.username||'').toLowerCase().includes(assign.assigneeName.toLowerCase()) ||
-              (u.real_name||'').toLowerCase().includes(assign.assigneeName.toLowerCase())
-            ).slice(0,13);
+      if (assign) {
+        const assignee = await resolveAssignee(assign.assigneeName);
 
-            if (candidates.length) {
-              const qr = candidates.map(u => ({
-                type:'action',
-                action:{ type:'message', label:`@${u.username}`, text:`@${u.username}: ${assign.detail}` + (assign.deadline?` | กำหนดส่ง: ${assign.deadline}`:'') + (assign.note?` | note: ${assign.note}`:'') }
-              }));
-              await reply(ev.replyToken, 'ไม่ชัดเจนว่าหมายถึงใคร เลือกจากด้านล่างได้เลย:', qr);
-            } else {
-              await reply(ev.replyToken,'ไม่พบผู้รับ กรุณาใช้ @username');
-            }
-            continue;
+        // ไม่ชัดเจนว่าเป็นใคร → เสนอรายชื่อให้เลือกเหมือนเดิม
+        if (!assignee) {
+          const r = await callAppsScript('list_users', {});
+          const key = String(assign.assigneeName||'').toLowerCase();
+          const candidates = (r.users||[]).filter(u =>
+            (u.username||'').toLowerCase().includes(key) ||
+            (u.real_name||'').toLowerCase().includes(key)
+          ).slice(0,13);
+
+          if (candidates.length) {
+            const qr = candidates.map(u => ({
+              type:'action',
+              action:{
+                type:'message',
+                label:`@${u.username}`,
+                text:`@${u.username}: ${assign.detail}` +
+                    (assign.deadline?` | กำหนดส่ง: ${assign.deadline}`:'') +
+                    (assign.note?` | note: ${assign.note}`:'')
+              }
+            }));
+            await reply(ev.replyToken, 'ไม่ชัดเจนว่าหมายถึงใคร เลือกจากด้านล่างได้เลย:', qr);
+          } else {
+            await reply(ev.replyToken,'ไม่พบผู้รับ กรุณาใช้ @username');
           }
-
-          const tmpId = 'TMP_' + crypto.randomBytes(3).toString('hex');
-          draftAssign.set(userId, { taskId: tmpId, assign, assignee });
-
-          // การ์ด Preview แบบไม่แสดง ID และมีแค่ปุ่ม "ยืนยัน/ยกเลิก"
-          const preview = {
-            type: 'bubble',
-            body: {
-              type: 'box', layout: 'vertical', spacing: 'sm',
-              contents: [
-                { type: 'text', text: clip(assign.detail, 80), weight: 'bold', wrap: true },
-                {
-                  type: 'box', layout: 'vertical', spacing: 'xs',
-                  contents: [
-                    { type: 'text', text: `อัปเดต: ${new Date().toISOString().slice(0,10)}`, size: 'xs', color: '#777777' },
-                    { type: 'text', text: `กำหนดส่ง: ${assign.deadline ? assign.deadline.replace('T',' ') : '-'}`, size: 'xs', color: '#555555' },
-                    { type: 'text', text: `ผู้รับ: ${assignee.username}`, size: 'xs', color: '#555555' },
-                    { type: 'text', text: `ผู้สั่ง: (คุณ)`, size: 'xs', color: '#555555' }
-                  ]
-                },
-                {
-                  type: 'box', layout: 'baseline',
-                  contents: [{ type: 'text', text: 'PENDING', size: 'xs', color: '#9e9e9e', weight: 'bold' }]
-                }
-              ]
-            },
-            footer: {
-              type: 'box', layout: 'vertical', spacing: 'sm',
-              contents: [
-                { type:'button', style:'primary', height:'sm',
-                  action:{ type:'message', label:'ยืนยันมอบหมาย', text:`ยืนยันมอบหมาย ${tmpId}` } },
-                { type:'button', style:'secondary', height:'sm',
-                  action:{ type:'message', label:'ยกเลิก', text:`ยกเลิกมอบหมาย ${tmpId}` } }
-              ]
-            }
-          };
-
-          await replyFlexMany(ev.replyToken, [preview], []);
           continue;
         }
+
+        // เก็บร่างไว้รอยืนยัน (เหมือนเดิม)
+        const tmpId = 'TMP_' + crypto.randomBytes(3).toString('hex');
+        draftAssign.set(userId, { taskId: tmpId, assign, assignee });
+
+        // การ์ด Preview (ไม่แสดง TMP_ID) + ปุ่ม “ยืนยัน/ยกเลิก”
+        const preview = {
+          type: 'bubble',
+          body: {
+            type: 'box', layout: 'vertical', spacing: 'sm',
+            contents: [
+              { type: 'text', text: clip(assign.detail, 80), weight: 'bold', wrap: true },
+              {
+                type: 'box', layout: 'vertical', spacing: 'xs',
+                contents: [
+                  { type: 'text', text: `อัปเดต: ${new Date().toISOString().slice(0,10)}`, size: 'xs', color: '#777777' },
+                  { type: 'text', text: `กำหนดส่ง: ${assign.deadline ? assign.deadline.replace('T',' ') : '-'}`, size: 'xs', color: '#555555' },
+                  { type: 'text', text: `ผู้รับ: ${assignee.username}`, size: 'xs', color: '#555555' },
+                  { type: 'text', text: `ผู้สั่ง: (คุณ)`, size: 'xs', color: '#555555' }
+                ]
+              },
+              { type: 'box', layout: 'baseline', contents: [
+                  { type: 'text', text: 'PENDING', size: 'xs', color: '#9e9e9e', weight: 'bold' }
+              ]}
+            ]
+          },
+          footer: {
+            type: 'box', layout: 'vertical', spacing: 'sm',
+            contents: [
+              { type:'button', style:'primary', height:'sm',
+                action:{ type:'message', label:'ยืนยันมอบหมาย', text:`ยืนยันมอบหมาย ${tmpId}` } },
+              { type:'button', style:'secondary', height:'sm',
+                action:{ type:'message', label:'ยกเลิก', text:`ยกเลิกมอบหมาย ${tmpId}` } }
+            ]
+          }
+        };
+
+        await replyFlexMany(ev.replyToken, [preview], []);
+        continue;
       }
+    }
+
 
 
 
