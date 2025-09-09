@@ -283,6 +283,9 @@ function compareDue(a, b) {
 
 // ------- Card Renderers -------
 function renderTaskCard({ id, title, date, due, status, assignee, assigner }, options = {}) {
+  const showStatusButtons = options.showStatusButtons !== false;   // ค่าเริ่มต้น = true
+  const showRemind        = !!options.showRemind;                  // ค่าเริ่มต้น = false
+
   const statusColor = (s => {
     const v = String(s||'').toLowerCase();
     if (v === 'done')  return '#2e7d32';
@@ -292,13 +295,21 @@ function renderTaskCard({ id, title, date, due, status, assignee, assigner }, op
 
   const footerContents = [];
 
-  // ถ้าไม่ได้สั่งปิด ให้ใส่ปุ่มสถานะ (ค่าเริ่มต้น = แสดง)
-  if (options.actions !== false) {
+  // ปุ่มสถานะ (ค่าเริ่มต้นเปิดอยู่)
+  if (showStatusButtons) {
     footerContents.push(
       { type:'button', style:'primary',   height:'sm',
         action:{ type:'message', label:'✅ เสร็จแล้ว',   text:`done ${id}` } },
       { type:'button', style:'secondary', height:'sm',
         action:{ type:'message', label:'⏳ กำลังทำ',     text:`กำลังดำเนินการ ${id}` } }
+    );
+  }
+
+  // ปุ่มเตือนงาน (เลือกเปิดเฉพาะบางที่)
+  if (showRemind) {
+    footerContents.push(
+      { type:'button', style:'secondary', height:'sm',
+        action:{ type:'message', label:'🔔 เตือนงาน', text:`เตือน ${id}` } }
     );
   }
 
@@ -328,6 +339,7 @@ function renderTaskCard({ id, title, date, due, status, assignee, assigner }, op
     footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: footerContents }
   };
 }
+
 
 
 
@@ -1135,6 +1147,9 @@ app.post('/webhook/line', async (req,res)=>{
           status: t.status,
           assignee: t.assignee_name || '',
           assigner: t.assigner_name || ''
+        }, {
+          showStatusButtons: false,   // ซ่อนปุ่มสถานะ
+          showRemind: true            // แสดงปุ่ม 🔔 เตือนงาน
         }));
 
         await replyFlexMany(ev.replyToken, bubbles, []);
