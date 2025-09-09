@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableHead, TableRow, TableCell,
   TableBody, TableContainer, Chip, Select, MenuItem, IconButton, Divider, Tooltip,
-  Snackbar, Alert, Button, Stack
+  Snackbar, Alert, Button, Stack ,TextField
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -23,7 +23,7 @@ const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
 const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
   username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
-  name:    { minWidth:{ xs:260, md:360 }, whiteSpace:'nowrap' },
+  name:    { minWidth:{ xs:220, md:300 }, whiteSpace:'nowrap' },
   role: {
     width: { xs: 150, md: 200 },
     whiteSpace: 'nowrap',
@@ -276,30 +276,41 @@ export default function AdminUsersSplitPage() {
                     <TableCell sx={colSx.id}><IdCell id={u.user_id} /></TableCell>
                     <TableCell sx={colSx.username}>
                       {editingId === u.user_id ? (
-                        <Box sx={{ display:'flex', gap:1, alignItems:'center' }}>
-                          <input
-                            value={draftUsername}
-                            onChange={e=>setDraftUsername(e.target.value)}
-                            disabled={!editable || busy}
-                            style={{ width: 140, font: 'inherit', padding: '4px 6px' }}
-                          />
-                        </Box>
+                        <TextField
+                          size="small"
+                          value={draftUsername}
+                          autoFocus
+                          disabled={!editable || busy}
+                          onChange={(e)=>setDraftUsername(e.target.value)}
+                          onKeyDown={(e)=>{
+                            if (e.key === 'Enter') saveEdit(u);
+                            if (e.key === 'Escape') cancelEdit();
+                            e.stopPropagation(); // กัน event ไปกวน table
+                          }}
+                          inputProps={{ style:{ padding: '6px 8px' } }}
+                          sx={{ width:{ xs:140, md:180 } }}
+                        />
                       ) : (
                         <Box sx={{ whiteSpace:'nowrap' }}>{u.username || '-'}</Box>
                       )}
                     </TableCell>
+
                     <TableCell sx={colSx.name}>
                       {editingId === u.user_id ? (
-                        <Box sx={{ display:'flex', gap:1, alignItems:'center' }}>
-                          <input
-                            value={draftName}
-                            onChange={e=>setDraftName(e.target.value)}
-                            disabled={!editable || busy}
-                            style={{ width: 260, font: 'inherit', padding: '4px 6px' }}
-                          />
-                        </Box>
+                        <TextField
+                          size="small"
+                          value={draftName}
+                          disabled={!editable || busy}
+                          onChange={(e)=>setDraftName(e.target.value)}
+                          onKeyDown={(e)=>{
+                            if (e.key === 'Enter') saveEdit(u);
+                            if (e.key === 'Escape') cancelEdit();
+                            e.stopPropagation();
+                          }}
+                          inputProps={{ style:{ padding: '6px 8px' } }}
+                          sx={{ width:{ xs:220, md:300 } }}   // ปรับให้แคบลง (ดูหัวข้อ C)
+                        />
                       ) : (
-                        // ชื่อ: บรรทัดเดียว (ไม่ตัด …) และปล่อยให้เลื่อนแนวนอนทั้งตาราง
                         <Box sx={{ whiteSpace:'nowrap' }}>{u.real_name || '-'}</Box>
                       )}
                     </TableCell>

@@ -1891,18 +1891,24 @@ app.post('/api/admin/users/update',
       if (!user_id) return res.status(400).json({ ok:false, error:'missing user_id' });
 
       const patch = {};
-      if (username) patch.username = username;
-      if (real_name) patch.real_name = real_name;
+      if (username !== undefined)  patch.username  = String(username);
+      if (real_name !== undefined) patch.real_name = String(real_name);
 
-      // ใช้ Apps Script helper ที่มีอยู่แล้ว
-      const resp = await callAppsScript('update_user', { user_id, ...patch });
-      return res.json({ ok:true, result: resp || null });
+      // ลอง update_user → ถ้าไม่มี ฟอลแบ็กไป upsert_user
+      try {
+        await callAppsScript('update_user', { user_id, ...patch });
+      } catch (e1) {
+        console.warn('update_user failed, fallback to upsert_user:', e1?.message || e1);
+        await callAppsScript('upsert_user', { user_id, ...patch });
+      }
+      return res.json({ ok:true });
     } catch (e) {
       console.error('UPDATE_USER_ERR', e?.message || e);
       res.status(500).json({ ok:false, error:'UPDATE_USER_ERR' });
     }
   }
 );
+
 
 // POST เปลี่ยน role
 app.post('/api/admin/users/role',
