@@ -707,6 +707,17 @@ function parseAssignLoose(text) {
     deadline = parseNaturalDue(`พรุ่งนี้ ${timeStr}`);
   }
 
+  // เลขชั่วโมงเดี่ยว ๆ เช่น "16" → วันนี้ 16:00
+  if (!deadline) {
+    const m = body.match(/(^|\s)(\d{1,2})(?=\s|$)/);
+    if (m) {
+      const hh = String(m[2]).padStart(2, '0');
+      deadline = parseNaturalDue(`วันนี้ ${hh}:00`);
+      body = body.replace(m[0], ' ').trim();
+    }
+  }
+
+
   // ===== ล้าง token วัน/เวลา ที่ยังหลงเหลือใน detail =====
   const scrubbers = [
     /(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)/gi,
