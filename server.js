@@ -551,14 +551,13 @@ function parseAssignLoose(text) {
   if (!text) return null;
   const raw = String(text).trim();
 
-  // ต้องมี @user เสมอ
   const mUser = raw.match(/@([^\s:：]+)/);
   if (!mUser) return null;
 
   const assigneeName = mUser[1].trim();
   let body = raw.replace(mUser[0], ' ').replace(/\s+/g, ' ').trim();
 
-  // เก็บกวาดคำฟิลเลอร์ยอดฮิต
+  // ฟิลเลอร์ยอดฮิต (ไม่ใช้ \b เพราะไม่เวิร์กกับไทย)
   body = body
     .replace(/(?:^|[\s,;])ของาน(?=$|[\s,;])/gi, ' ')
     .replace(/(?:^|[\s,;])(ช่วยทำ|ช่วยเช็ค|ช่วยแก้|ช่วยอัปเดต|ช่วยตรวจ|ช่วย|จัดการ|ขอ)(?=$|[\s,;])/gi, ' ')
@@ -584,76 +583,55 @@ function parseAssignLoose(text) {
     body = body.replace(re, ' ').replace(/\s+/g, ' ').trim();
   };
 
-  // ===== เวลา/วัน =====
   let deadline = '';
-  let relDay = '';   // วันนี้ | พรุ่งนี้
-  let timeStr = '';  // HH:mm
+  let relDay = '';     // วันนี้ | พรุ่งนี้
+  let timeStr = '';    // HH:mm
 
-  // (A) จับ "วันนี้/พรุ่งนี้ + เวลา" ให้เสร็จก่อนสุด (ทำบน raw เพื่อไม่โดน rm ตัดคำ)
+  // --- วันที่/เวลาแบบภาษาพูด (จัดลำดับสำคัญ: จับ "วันนี้/พรุ่งนี้ + เวลา" ก่อน) ---
+
+  // 1) "วันนี้/พรุ่งนี้ + เวลา" เช่น "พรุ่งนี้ 9", "วันนี้ 9:30", "พรุ่งนี้ เที่ยง", "พรุ่งนี้ 9.00"
   if (!deadline) {
-    const m = raw.match(/(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)\s*(เที่ยง(?:ตรง)?|เที่ยงครึ่ง|(\d{1,2})(?:[:.](\d{2}))?)/i);
+    let m = body.match(/(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)\s*(เที่ยง(?:ตรง)?|เที่ยงครึ่ง|(\d{1,2})(?:[:.](\d{2}))?)/i);
     if (m) {
-      const day = /^วันนี้$/i.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้';
-      let t = m[2];
-      if (/เที่ยง/i.test(t)) t = /ครึ่ง/i.test(t) ? '12:30' : '12:00';
-      t = String(t).replace('.', ':');
-      deadline = parseNaturalDue(`${day} ${t}`);
-      // ไม่จำเป็นต้องลบออกจาก body ก็ได้
+      if (m[2] && !m[3]) {
+        // เที่ยง/เที่ยงครึ่ง
+        const hhmm = /ครึ่ง/i.test(m[2]) ? '12:30' : '12:00';
+        deadline = parseNaturalDue(`${/^วันนี้$/i.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้'} ${hhmm}`);
+      } else {
+        // เลขชั่วโมง (9 / 9:00 / 9.00)
+        const hh = String(m[3]).padStart(2, '0');
+        const mm = String(m[4] || '0').padStart(2, '0');
+        deadline = parseNaturalDue(`${/^วันนี้$/i.test(m[1]) ? 'วันนี้' : 'พรุ่งนี้'} ${hh}:${mm}`);
+      }
+      rm(m[0]);
     }
   }
 
-  // (B) ถ้ายังไม่เจอเดดไลน์ เก็บแค่วัน (จาก body) แล้วลบออก
-  if (!deadline) {
+  // 2) เก็บ flag "วันนี้/พรุ่งนี้" เดี่ยว ๆ (ทำหลังข้อ 1)
+  if (!relDay) {
     const m = body.match(/(^|[\s,;])(วันนี้|พรุ่งนี้|พรุ้งนี้|พรุงนี้)(?=($|[\s,;]))/i);
-    if (m) {
-      relDay = /^วันนี้$/i.test(m[2]) ? 'วันนี้' : 'พรุ่งนี้';
-      rm(m[2]);
-    }
+    if (m) { relDay = /^วันนี้$/i.test(m[2]) ? 'วันนี้' : 'พรุ่งนี้'; rm(m[2]); }
   }
 
-  // (C) เวลาแบบ hh:mm ที่อยู่กลางประโยค (เช่น "วันนี้ 14:05" หลังลบคำว่า "วันนี้")
-  if (!timeStr) {
-    const m = body.match(/(^|[\s,;])(\d{1,2})(?:[:.](\d{2}))(?=($|[\s,;]))/i);
-    if (m) {
-      const hh = String(m[2]).padStart(2, '0');
-      const mm = String(m[3]).padStart(2, '0');
-      timeStr = `${hh}:${mm}`;
-      rm(m[0]);
-    }
-  }
-
-  // (D) ชั่วโมงเดี่ยว ๆ (เช่น "พรุ่งนี้ 9") — ใช้เมื่อมี relDay เท่านั้น เพื่อเลี่ยง false positive
-  if (!timeStr && relDay) {
-    const m = body.match(/(^|[\s,;])(\d{1,2})(?=($|[\s,;]))/);
-    if (m) {
-      const hh = String(m[2]).padStart(2, '0');
-      timeStr = `${hh}:00`;
-      rm(m[0]);
-    }
-  }
-
-  // (E) เวลาแบบพูด: เที่ยง/เที่ยงครึ่ง
+  // 3) เวลาแบบพูด: เที่ยง/เที่ยงครึ่ง
   if (!timeStr) {
     const m = body.match(/เที่ยง(?:ตรง)?|เที่ยงครึ่ง/i);
-    if (m) {
-      timeStr = /ครึ่ง/i.test(m[0]) ? '12:30' : '12:00';
-      rm(m[0]);
-    }
+    if (m) { timeStr = /ครึ่ง/i.test(m[0]) ? '12:30' : '12:00'; rm(m[0]); }
   }
 
-  // (F) "บ่ายหนึ่ง/สอง/... [ครึ่ง]" หรือ "ก่อนบ่าย 3"
+  // 4) บ่ายหนึ่ง/สอง/... [ครึ่ง]
   if (!timeStr) {
-    const m = body.match(/(?:ก่อน)?บ่าย\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|12|\d{1,2})\s*(โมง)?(ครึ่ง)?/i);
+    const m = body.match(/บ่าย\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|12|\d{1,2})\s*(โมง)?(ครึ่ง)?/i);
     if (m) {
-      const map = { หนึ่ง: 13, สอง: 14, สาม: 15, สี่: 16, ห้า: 17, หก: 18, เจ็ด: 19, แปด: 20, เก้า: 21, สิบ: 22, สิบเอ็ด: 23 };
-      const hh = map[m[1]?.toLowerCase?.()] ?? (12 + Number(m[1]));
+      const map = { หนึ่ง:13, สอง:14, สาม:15, สี่:16, ห้า:17, หก:18, เจ็ด:19, แปด:20, เก้า:21, สิบ:22, สิบเอ็ด:23 };
+      const hh = map[m[1].toLowerCase?.()] ?? (12 + Number(m[1]));
       const mm = m[3] ? 30 : 0;
-      timeStr = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
       rm(m[0]);
     }
   }
 
-  // (G) "X โมง [เช้า|เย็น] [ครึ่ง]" หรือ "X ทุ่ม [ครึ่ง]"
+  // 5) X โมง [เช้า|เย็น] [ครึ่ง]  |  X ทุ่ม [ครึ่ง]
   if (!timeStr) {
     const m = body.match(/(\d{1,2})\s*โมง\s*(เช้า|เย็น)?(ครึ่ง)?|(\d{1,2})\s*ทุ่ม(ครึ่ง)?/i);
     if (m) {
@@ -662,44 +640,37 @@ function parseAssignLoose(text) {
         hh = Number(m[1]);
         if ((m[2] || '').toLowerCase() === 'เย็น' && hh <= 6) hh += 12;
       } else {    // X ทุ่ม
-        hh = 18 + Number(m[4]); // 1 ทุ่ม = 19:00
+        hh = 18 + Number(m[4]); // 1 ทุ่ม = 19
       }
-      timeStr = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
       rm(m[0]);
     }
   }
 
-  // (H) dd/MM หรือ dd/MM HH[:.]mm (ตีความเป็นปีปัจจุบัน)
+  // 6) dd/MM หรือ dd/MM HH[:.]mm
   if (!deadline) {
     const m = body.match(/\b(\d{1,2}\/\d{1,2})(?:\s+(\d{1,2})(?::|\.)(\d{2}))?\b/);
     if (m) { deadline = parseNaturalDue(m[0]); rm(m[0]); }
   }
 
-  // (I) สรุป day/time → deadline
+  // 7) สรุป day/time → deadline
   if (!deadline && relDay && timeStr) deadline = parseNaturalDue(`${relDay} ${timeStr}`);
   if (!deadline && timeStr)          deadline = parseNaturalDue(`วันนี้ ${timeStr}`);
   if (!deadline && relDay)           deadline = parseNaturalDue(relDay);
 
-  // กัน miss case: ถ้าใน raw มี "พรุ่งนี้" และมี timeStr แต่ relDay ว่าง → ใช้พรุ่งนี้
+  // กันพลาด: หากข้อความดิบมี "พรุ่งนี้" และเรารู้เวลาแต่ relDay ว่าง → ใช้พรุ่งนี้
   if (!deadline && timeStr && /(พรุ่งนี้|พรุ้งนี้|พรุงนี้)/i.test(raw)) {
     deadline = parseNaturalDue(`พรุ่งนี้ ${timeStr}`);
   }
 
   // เก็บกวาดฟิลเลอร์ปลายประโยค + เว้นวรรค
-  body = body.replace(/(^|[\s,;])(ก่อน|ภายใน|นะ|ด้วย)(?=($|[\s,;]))/g, ' ').replace(/\s+/g, ' ').trim();
+  body = body.replace(/(^|[\s,;])(ก่อน|ภายใน|นะ|ด้วย)(?=($|[\s,;]))/g, ' ')
+             .replace(/\s+/g,' ')
+             .trim();
 
   const detail = body || '-';
   return { assigneeName, detail, deadline, note };
 }
-
-
-
-
-
-
-
-
-
 
 // ── Parsers
 function parseRegister(text){
