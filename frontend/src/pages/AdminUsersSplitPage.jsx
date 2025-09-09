@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+// src/pages/AdminUsersSplitPage.jsx
+import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableHead, TableRow, TableCell,
   TableBody, TableContainer, Chip, Select, MenuItem, IconButton, Divider, Tooltip,
-  Snackbar, Alert, Button, Stack ,TextField, CircularProgress
+  Snackbar, Alert, Button, Stack, TextField, CircularProgress
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -16,31 +17,18 @@ import DialogActions from '@mui/material/DialogActions';
 import useMe from '../hooks/useMe';
 import { listUsers, setUserRole, setUserStatus, deleteUser, updateUserProfile } from '../api/client';
 
-
-// เดิม: { user:1, supervisor:2, admin:3, developer:4 }
+// ---------- helpers / constants ----------
 const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
+const ORDERED_ROLES = ['developer', 'supervisor', 'admin', 'user'];
 
 const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
   username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
-  name:    { minWidth:{ xs:180, md:240 }, whiteSpace:'nowrap' },
-  role: {
-    width: { xs: 150, md: 200 },
-    whiteSpace: 'nowrap',
-    pr: { xs: 2, md: 5 }           // ขยับช่องว่างด้านขวา role
-  },
-  status: {
-    width: { xs: 140, md: 180 },
-    whiteSpace: 'nowrap',
-    pl: { xs: 1.5, md: 3 }         // ขยับช่องว่างด้านซ้าย status
-  },
-  action: {
-    width: { xs: 64, md: 90 },      // ลดความกว้างคอลัมน์ action บนมือถือ
-    textAlign: 'center',
-    whiteSpace: 'nowrap'
-  },
-  updated: { width:{ xs:0, md:220 }, display:{ xs:'none', md:'table-cell' }, whiteSpace:'nowrap' },
-  
+  name:    { minWidth:{ xs:180, md:240 }, whiteSpace:'nowrap' }, // ปรับได้อีกถ้าต้องการ
+  role:    { width:{ xs:150, md:200 }, whiteSpace:'nowrap', pr:{ xs:2, md:5 } },
+  status:  { width:{ xs:140, md:180 }, whiteSpace:'nowrap', pl:{ xs:1.5, md:3 } },
+  action:  { width:{ xs:64,  md:90 },  textAlign:'center', whiteSpace:'nowrap' },
+  updated: { width:{ xs:0,   md:220 }, display:{ xs:'none', md:'table-cell' }, whiteSpace:'nowrap' },
 };
 
 function roleColor(r) {
@@ -50,6 +38,204 @@ function roleColor(r) {
 }
 const cmp = (a,b,by) => (String(a?.[by] ?? '')).localeCompare(String(b?.[by] ?? ''), 'th');
 
+// ---------- presentational components (ยกออกมานอกคอมโพเนนต์หลัก) ----------
+
+const IdCell = memo(function IdCell({ id, copyId }) {
+  return (
+    <Box sx={{ display:'flex', alignItems:'center', gap:1, ...colSx.id }}>
+      <Box sx={{ overflow:'hidden', textOverflow:'ellipsis' }}>{id}</Box>
+      <Tooltip title="คัดลอก user_id">
+        <span>
+          <IconButton size="small" onClick={()=>copyId(id)}>
+            <ContentCopyIcon fontSize="inherit" />
+          </IconButton>
+        </span>
+      </Tooltip>
+    </Box>
+  );
+});
+
+const TableBlock = memo(function TableBlock(props) {
+  const {
+    title, items, onSort, canEdit, getAllowedRoles, doRole, doStatus,
+    editingId, draftUsername, draftName, setDraftUsername, setDraftName,
+    saveEdit, cancelEdit, startEdit, copyId, busy
+  } = props;
+
+  // IME guard (ไทย/ญี่ปุ่น ฯลฯ)
+  const [isComposing, setIsComposing] = useState(false);
+  const usernameRef = useRef(null);
+  const nameRef     = useRef(null);
+
+  return (
+    <Paper variant="outlined" sx={{ mb: 3, borderRadius: 3, overflow:'hidden' }}>
+      <Box sx={{ px: 2, py: 1.5 }}>
+        <Typography variant="subtitle1" fontWeight={700}>{title}</Typography>
+      </Box>
+      <Divider />
+      <TableContainer sx={{ overflowX:'auto', maxHeight:{ xs:420, md:560 } }}>
+        <Table
+          size="small"
+          stickyHeader
+          sx={{
+            tableLayout: 'auto',
+            '& td, & th': { px: { xs: 1, sm: 2 }, fontSize: { xs: 13, sm: 14 } }
+          }}
+        >
+          <TableHead>
+            <TableRow>
+              <TableCell sx={colSx.id}      onClick={()=>onSort('user_id')}    >user_id</TableCell>
+              <TableCell sx={colSx.username} onClick={()=>onSort('username')}  >username</TableCell>
+              <TableCell sx={colSx.name}     onClick={()=>onSort('real_name')} >name</TableCell>
+              <TableCell sx={colSx.role}>role</TableCell>
+              <TableCell sx={colSx.status}>status</TableCell>
+              <TableCell sx={colSx.updated}  onClick={()=>onSort('updated_at')}>updated_at</TableCell>
+              <TableCell sx={colSx.action} align="center">action</TableCell>
+            </TableRow>
+          </TableHead>
+
+          <TableBody>
+            {items.map(u => {
+              const r = String(u.role||'user').toLowerCase();
+              const editable = canEdit(r);
+
+              return (
+                <TableRow key={u.user_id} hover>
+                  <TableCell sx={colSx.id}><IdCell id={u.user_id} copyId={copyId} /></TableCell>
+
+                  {/* username */}
+                  <TableCell sx={colSx.username}>
+                    {editingId === u.user_id ? (
+                      <TextField
+                        size="small"
+                        value={draftUsername}
+                        disabled={!editable || busy}
+                        onChange={(e)=>setDraftUsername(e.target.value)}
+                        onMouseDown={(e)=>e.stopPropagation()}
+                        inputRef={usernameRef}
+                        onCompositionStart={()=>setIsComposing(true)}
+                        onCompositionEnd={()=>setIsComposing(false)}
+                        onKeyDown={(e)=>{
+                          if (!isComposing && e.key === 'Enter') saveEdit(u);
+                          if (!isComposing && e.key === 'Escape') cancelEdit();
+                          e.stopPropagation();
+                        }}
+                        inputProps={{ style:{ padding: '6px 8px' } }}
+                        sx={{ width:{ xs:140, md:180 } }}
+                      />
+                    ) : (
+                      <Box sx={{ whiteSpace:'nowrap' }}>{u.username || '-'}</Box>
+                    )}
+                  </TableCell>
+
+                  {/* name */}
+                  <TableCell sx={colSx.name}>
+                    {editingId === u.user_id ? (
+                      <TextField
+                        size="small"
+                        value={draftName}
+                        disabled={!editable || busy}
+                        onChange={(e)=>setDraftName(e.target.value)}
+                        onMouseDown={(e)=>e.stopPropagation()}
+                        inputRef={nameRef}
+                        onCompositionStart={()=>setIsComposing(true)}
+                        onCompositionEnd={()=>setIsComposing(false)}
+                        onKeyDown={(e)=>{
+                          if (!isComposing && e.key === 'Enter') saveEdit(u);
+                          if (!isComposing && e.key === 'Escape') cancelEdit();
+                          e.stopPropagation();
+                        }}
+                        inputProps={{ style:{ padding: '6px 8px' } }}
+                        sx={{ width:{ xs:220, md:300 } }}
+                      />
+                    ) : (
+                      <Box sx={{ whiteSpace:'nowrap' }}>{u.real_name || '-'}</Box>
+                    )}
+                  </TableCell>
+
+                  {/* role (select + chip ข้างๆ) */}
+                  <TableCell sx={{ ...colSx.role, overflow:'hidden' }}>
+                    <Box sx={{ display:'flex', alignItems:'center', gap:1, flexWrap:'nowrap' }}>
+                      <Select
+                        size="small"
+                        value={r}
+                        disabled={!editable || busy}
+                        sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
+                        onChange={(e)=>doRole(u, e.target.value)}
+                      >
+                        {getAllowedRoles(r).map(v => (<MenuItem key={v} value={v}>{v}</MenuItem>))}
+                      </Select>
+                      <Chip
+                        size="small"
+                        label={r}
+                        color={roleColor(r)}
+                        sx={{ display:{ xs:'none', sm:'inline-flex' }, flexShrink:0 }}
+                      />
+                    </Box>
+                  </TableCell>
+
+                  {/* status */}
+                  <TableCell sx={colSx.status}>
+                    <Select
+                      size="small"
+                      value={u.status || 'Active'}
+                      disabled={!editable || busy}
+                      onChange={(e)=>doStatus(u, e.target.value)}
+                      sx={{ minWidth:{ xs:110, sm:120 }, '& .MuiSelect-select': { py:0.5 } }}
+                    >
+                      <MenuItem value="Active">Active</MenuItem>
+                      <MenuItem value="Inactive">Inactive</MenuItem>
+                    </Select>
+                  </TableCell>
+
+                  {/* updated */}
+                  <TableCell sx={colSx.updated}>{u.updated_at || ''}</TableCell>
+
+                  {/* action */}
+                  <TableCell sx={colSx.action} align="center">
+                    {editable && editingId !== u.user_id && (
+                      <Stack direction="row" spacing={0.5} justifyContent="center">
+                        <Button size="small" variant="outlined" disabled={busy} onClick={()=>startEdit(u)}>แก้ไข</Button>
+                        <Tooltip title="ตั้งเป็น Inactive">
+                          <span>
+                            <IconButton color="error" disabled={busy}
+                              onClick={()=>props.setConfirm({ user_id: u.user_id, name: u.real_name || u.username || u.user_id })}>
+                              <DeleteIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Stack>
+                    )}
+                    {editable && editingId === u.user_id && (
+                      <Stack direction="row" spacing={0.5} justifyContent="center">
+                        <Button size="small" variant="contained" disabled={busy} onClick={()=>saveEdit(u)}>บันทึก</Button>
+                        <Button size="small" variant="text" disabled={busy} onClick={cancelEdit}>ยกเลิก</Button>
+                      </Stack>
+                    )}
+                    {!editable && (
+                      <Tooltip title="ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า">
+                        <span><Button size="small" disabled>แก้ไข</Button></span>
+                      </Tooltip>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {items.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} align="center" sx={{ py:3, color:'text.secondary' }}>
+                  No users
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Paper>
+  );
+});
+
+// ---------- main component ----------
 export default function AdminUsersSplitPage() {
   const { data } = useMe();
   const myRole = (data?.user?.role || 'user').toLowerCase();
@@ -61,31 +247,19 @@ export default function AdminUsersSplitPage() {
   const [confirm, setConfirm] = useState(null); // { user_id, name }
   const [snack, setSnack] = useState({ open:false, msg:'', sev:'success' });
   const [refreshedAt, setRefreshedAt] = useState(null);
-  const [isComposing, setIsComposing] = useState(false);
-  const [activeField, setActiveField] = useState(null); // 'username' | 'name'
-  const usernameRef = useRef(null);
-  const nameRef = useRef(null);
-
-
-  const [working, setWorking] = useState({ on: false, msg: '' });
-
-  
-
+  const [working, setWorking] = useState({ on:false, msg:'' });
 
   // sort state (ใช้ร่วมกันทั้ง 3 ตาราง)
   const [orderBy, setOrderBy] = useState('updated_at');
   const [order, setOrder] = useState('desc');
 
-  // ให้ developer เห็น role เท่ากับตัวเองได้ (<=) ส่วนคนอื่นเห็นได้เฉพาะต่ำกว่า (<)
-
-  const ORDERED_ROLES = ['developer', 'supervisor', 'admin', 'user'];
+  // roles ที่อนุญาตให้เลือกได้ (<= ตัวเองถ้า developer, อื่นๆ < ตัวเอง)
   const roleChoices = useMemo(() => {
-    return ORDERED_ROLES.filter((r) => {
+    return ORDERED_ROLES.filter(r => {
       const rk = ROLE_RANK[r] || 0;
       return myRole === 'developer' ? rk <= myRank : rk < myRank;
     });
   }, [myRole, myRank]);
-
 
   const load = async () => {
     setBusy(true);
@@ -121,14 +295,11 @@ export default function AdminUsersSplitPage() {
   const canEdit = (targetRole) =>
     (ROLE_RANK[String(targetRole||'user')] || 0) < myRank;
 
-  const baseRoles = ['user','admin','supervisor','developer'];
-
   const getAllowedRoles = (targetRole) => {
     const target = String(targetRole || 'user');
-    const my = myRank;
-    let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r] || 0) <= my);
+    let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r] || 0) <= myRank);
     const targetRk = ROLE_RANK[target] || 0;
-    if (targetRk >= my) list = Array.from(new Set([target, ...list]));
+    if (targetRk >= myRank) list = Array.from(new Set([target, ...list]));
     return list;
   };
 
@@ -136,20 +307,11 @@ export default function AdminUsersSplitPage() {
   const doRole = async (u, role) => {
     const targetRank = ROLE_RANK[String(u.role||'user').toLowerCase()] || 0;
     const newRank    = ROLE_RANK[String(role||'user').toLowerCase()] || 0;
-
-    // ห้ามแก้ peer/สูงกว่า
-    if (targetRank >= myRank) {
+    if (targetRank >= myRank || newRank > myRank) {
       setSnack({ open:true, msg:'คุณไม่มีสิทธิ์เปลี่ยนสิทธิ์นี้', sev:'error' });
       return;
     }
-    // ทุก role ตั้งได้ ≤ ตัวเอง (เท่าตัวเองได้)
-    if (newRank > myRank) {
-      setSnack({ open:true, msg:'คุณไม่มีสิทธิ์เปลี่ยนสิทธิ์นี้', sev:'error' });
-      return;
-    }
-
-    setBusy(true);
-      setWorking({ on: true, msg: 'กำลังเปลี่ยนสิทธิ์...' });
+    setBusy(true); setWorking({ on:true, msg:'กำลังเปลี่ยนสิทธิ์...' });
     try {
       await setUserRole(u.user_id, role);
       setSnack({ open:true, msg:'อัปเดตบทบาทแล้ว', sev:'success' });
@@ -157,15 +319,12 @@ export default function AdminUsersSplitPage() {
     } catch {
       setSnack({ open:true, msg:'เปลี่ยนบทบาทไม่สำเร็จ', sev:'error' });
     } finally {
-      setBusy(false);
-      setWorking({ on: false, msg: '' });
+      setBusy(false); setWorking({ on:false, msg:'' });
     }
   };
 
-
   const doStatus = async (u, status) => {
-    setBusy(true);
-      setWorking({ on: true, msg: 'กำลังเปลี่ยนสถานะ...' });
+    setBusy(true); setWorking({ on:true, msg:'กำลังเปลี่ยนสถานะ...' });
     try {
       await setUserStatus(u.user_id, status);
       setSnack({ open:true, msg:'อัปเดตสถานะแล้ว', sev:'success' });
@@ -173,8 +332,7 @@ export default function AdminUsersSplitPage() {
     } catch {
       setSnack({ open:true, msg:'อัปเดตสถานะไม่สำเร็จ', sev:'error' });
     } finally {
-      setBusy(false);
-      setWorking({ on: false, msg: '' });
+      setBusy(false); setWorking({ on:false, msg:'' });
     }
   };
 
@@ -206,21 +364,7 @@ export default function AdminUsersSplitPage() {
     else { setOrderBy(by); setOrder('asc'); }
   };
 
-  function IdCell({ id }) {
-    return (
-      <Box sx={{ display:'flex', alignItems:'center', gap:1, ...colSx.id }}>
-        <Box sx={{ overflow:'hidden', textOverflow:'ellipsis' }}>{id}</Box>
-        <Tooltip title="คัดลอก user_id">
-          <span>
-            <IconButton size="small" onClick={()=>copyId(id)}>
-              <ContentCopyIcon fontSize="inherit" />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </Box>
-    );
-  }
-  // --- inline edit username/name ---
+  // --- inline edit state & handlers ---
   const [editingId, setEditingId] = useState(null);
   const [draftUsername, setDraftUsername] = useState('');
   const [draftName, setDraftName] = useState('');
@@ -230,195 +374,25 @@ export default function AdminUsersSplitPage() {
     setEditingId(u.user_id);
     setDraftUsername(u.username || '');
     setDraftName(u.real_name || '');
-    
   };
-
   const cancelEdit = () => {
     setEditingId(null);
-    setDraftUsername('');
-    setDraftName('');
+    setDraftUsername(''); setDraftName('');
   };
-
   const saveEdit = async (u) => {
     if (!u) return;
-    setBusy(true);
-      setWorking({ on: true, msg: 'กำลังบันทึกโปรไฟล์...' });
+    setBusy(true); setWorking({ on:true, msg:'กำลังบันทึกโปรไฟล์...' });
     try {
-      await updateUserProfile(u.user_id, {
-        username: draftUsername,
-        real_name: draftName
-      });
+      await updateUserProfile(u.user_id, { username: draftUsername, real_name: draftName });
       setSnack({ open:true, msg:'อัปเดตโปรไฟล์แล้ว', sev:'success' });
       cancelEdit();
       await load();
-    } catch (e) {
+    } catch {
       setSnack({ open:true, msg:'อัปเดตโปรไฟล์ไม่สำเร็จ', sev:'error' });
     } finally {
-      setBusy(false);
-      setWorking({ on: false, msg: '' });
+      setBusy(false); setWorking({ on:false, msg:'' });
     }
   };
-
-  function TableBlock({ title, items }) {
-    return (
-      <Paper variant="outlined" sx={{ mb: 3, borderRadius: 3, overflow:'hidden' }}>
-        <Box sx={{ px: 2, py: 1.5 }}>
-          <Typography variant="subtitle1" fontWeight={700}>{title}</Typography>
-        </Box>
-        <Divider />
-        <TableContainer sx={{ overflowX:'auto', maxHeight:{ xs:420, md:560 } }}>
-          <Table 
-            size="small" 
-            stickyHeader 
-            sx={{ 
-              tableLayout: 'auto', // ให้คอลัมน์ขยายตามเนื้อหา (ชื่อยาวก็เห็นเต็ม) 
-              '& td, & th': { px: { xs: 1, sm: 2 }, fontSize: { xs: 13, sm: 14 } } 
-            }} 
-          >
-            <TableHead>
-              <TableRow>
-                <TableCell sx={colSx.id}      onClick={()=>onSort('user_id')}    >user_id</TableCell>
-                <TableCell sx={colSx.username} onClick={()=>onSort('username')}  >username</TableCell>
-                <TableCell sx={colSx.name}     onClick={()=>onSort('real_name')} >name</TableCell>
-                <TableCell sx={colSx.role}     >role</TableCell>
-                <TableCell sx={colSx.status}   >status</TableCell>
-                <TableCell sx={colSx.updated}  onClick={()=>onSort('updated_at')}>updated_at</TableCell>
-                <TableCell sx={colSx.action} align="center">action</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {items.map(u=>{
-                const r = String(u.role||'user').toLowerCase();
-                const editable = canEdit(r);
-                return (
-                  <TableRow key={u.user_id} hover>
-                    <TableCell sx={colSx.id}><IdCell id={u.user_id} /></TableCell>
-                    <TableCell sx={colSx.username}>
-                      {editingId === u.user_id ? (
-                        <TextField
-                          size="small"
-                          value={draftUsername}
-                          disabled={!editable || busy}
-                          onChange={(e)=>setDraftUsername(e.target.value)}
-                          onMouseDown={(e)=>e.stopPropagation()}
-                          inputRef={usernameRef}
-                          onFocus={()=>setActiveField('username')}
-                          onCompositionStart={()=>setIsComposing(true)}
-                          onCompositionEnd={()=>setIsComposing(false)}
-                          onKeyDown={(e)=>{
-                            if (!isComposing && e.key === 'Enter') saveEdit(u);
-                            if (!isComposing && e.key === 'Escape') cancelEdit();
-                            e.stopPropagation();
-                          }}
-                          inputProps={{ style:{ padding: '6px 8px' } }}
-                          sx={{ width:{ xs:140, md:180 } }}
-                        />
-                      ) : (
-                        <Box sx={{ whiteSpace:'nowrap' }}>{u.username || '-'}</Box>
-                      )}
-                    </TableCell>
-
-                    <TableCell sx={colSx.name}>
-                      {editingId === u.user_id ? (
-                        <TextField
-                          size="small"
-                          value={draftName}
-                          disabled={!editable || busy}
-                          onChange={(e)=>setDraftName(e.target.value)}
-                          onMouseDown={(e)=>e.stopPropagation()}
-                          inputRef={nameRef}
-                          onFocus={()=>setActiveField('name')}
-                          onCompositionStart={()=>setIsComposing(true)}
-                          onCompositionEnd={()=>setIsComposing(false)}
-                          onKeyDown={(e)=>{
-                            if (!isComposing && e.key === 'Enter') saveEdit(u);
-                            if (!isComposing && e.key === 'Escape') cancelEdit();
-                            e.stopPropagation();
-                          }}
-                          inputProps={{ style:{ padding: '6px 8px' } }}
-                          sx={{ width:{ xs:220, md:300 } }}  
-                        />
-                      ) : (
-                        <Box sx={{ whiteSpace:'nowrap' }}>{u.real_name || '-'}</Box>
-                      )}
-                    </TableCell>
-                    <TableCell sx={{ ...colSx.role, overflow:'hidden' }}>
-                      <Box sx={{ display:'flex', alignItems:'center', gap:1, flexWrap:'nowrap' }}>
-                        <Select
-                          size="small"
-                          value={r}
-                          disabled={!editable || busy}
-                          sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
-                          onChange={(e)=>doRole(u, e.target.value)}
-                        >
-                          {getAllowedRoles(r).map(v => (<MenuItem key={v} value={v}>{v}</MenuItem>))}
-                        </Select>
-                        <Chip
-                          size="small"
-                          label={r}
-                          color={roleColor(r)}
-                          sx={{
-                            display:{ xs:'none', sm:'inline-flex' },   // แสดงเฉพาะจอ ≥ sm
-                            flexShrink: 0                              // ไม่หด ไม่ดัน status
-                          }}
-                        />
-                      </Box>
-                    </TableCell>
-                    <TableCell sx={colSx.status}>
-                      <Select
-                        size="small"
-                        value={u.status || 'Active'}
-                        disabled={!editable || busy}
-                        onChange={(e)=>doStatus(u, e.target.value)}
-                        sx={{
-                          minWidth: { xs: 110, sm: 120 },        // ⬅︎ แคบลงบนมือถือ
-                          '& .MuiSelect-select': { py: 0.5 }
-                        }}
-                      >
-                        <MenuItem value="Active">Active</MenuItem>
-                        <MenuItem value="Inactive">Inactive</MenuItem>
-                      </Select>
-                    </TableCell>
-                    <TableCell sx={colSx.updated}>{u.updated_at || ''}</TableCell>
-                    <TableCell sx={colSx.action} align="center">
-                      {editable && editingId !== u.user_id && (
-                        <Stack direction="row" spacing={0.5} justifyContent="center">
-                          <Button size="small" variant="outlined" disabled={busy} onClick={()=>startEdit(u)}>แก้ไข</Button>
-                          <Tooltip title="ตั้งเป็น Inactive">
-                            <span>
-                              <IconButton color="error" disabled={busy}
-                                onClick={()=>setConfirm({ user_id: u.user_id, name: u.real_name || u.username || u.user_id })}>
-                                <DeleteIcon />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </Stack>
-                      )}
-                      {editable && editingId === u.user_id && (
-                        <Stack direction="row" spacing={0.5} justifyContent="center">
-                          <Button size="small" variant="contained" disabled={busy}
-                            onClick={()=>saveEdit(u)}>บันทึก</Button>
-                          <Button size="small" variant="text" disabled={busy} onClick={cancelEdit}>ยกเลิก</Button>
-                        </Stack>
-                      )}
-                      {!editable && (
-                        <Tooltip title="ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า">
-                          <span><Button size="small" disabled>แก้ไข</Button></span>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {items.length===0 && (
-                <TableRow><TableCell colSpan={7} align="center" sx={{ py:3, color:'text.secondary' }}>No users</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
-    );
-  }
 
   return (
     <Container sx={{ pb: 6 }}>
@@ -426,11 +400,7 @@ export default function AdminUsersSplitPage() {
       <Box sx={{ my:2, display:'flex', alignItems:'center', justifyContent:'space-between', gap:1, flexWrap:'wrap' }}>
         <Typography variant="h5" fontWeight={800}>Administrator management</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={()=>navigate('/admin/users?assignedBy=me')}
-          >
+          <Button size="small" variant="outlined" onClick={()=>navigate('/admin/users?assignedBy=me')}>
             ดูงานที่ฉันสั่ง
           </Button>
           {working.on && (
@@ -450,9 +420,83 @@ export default function AdminUsersSplitPage() {
         </Stack>
       </Box>
 
-      <TableBlock title="Developers"           items={devRows} />
-      <TableBlock title="Admins & Supervisors" items={mgrRows} />
-      <TableBlock title="Users"                items={userRows} />
+      <TableBlock
+        title="Developers"
+        items={devRows}
+        onSort={onSort}
+        canEdit={(r)=> (ROLE_RANK[String(r||'user')]||0) < myRank}
+        getAllowedRoles={(targetRole)=>{
+          const targetRk = ROLE_RANK[String(targetRole||'user')]||0;
+          let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r]||0) <= myRank);
+          if (targetRk >= myRank) list = Array.from(new Set([String(targetRole||'user'), ...list]));
+          return list;
+        }}
+        doRole={doRole}
+        doStatus={doStatus}
+        editingId={editingId}
+        draftUsername={draftUsername}
+        draftName={draftName}
+        setDraftUsername={setDraftUsername}
+        setDraftName={setDraftName}
+        saveEdit={saveEdit}
+        cancelEdit={cancelEdit}
+        startEdit={startEdit}
+        copyId={copyId}
+        busy={busy}
+        setConfirm={setConfirm}
+      />
+
+      <TableBlock
+        title="Admins & Supervisors"
+        items={mgrRows}
+        onSort={onSort}
+        canEdit={(r)=> (ROLE_RANK[String(r||'user')]||0) < myRank}
+        getAllowedRoles={(targetRole)=>{
+          const targetRk = ROLE_RANK[String(targetRole||'user')]||0;
+          let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r]||0) <= myRank);
+          if (targetRk >= myRank) list = Array.from(new Set([String(targetRole||'user'), ...list]));
+          return list;
+        }}
+        doRole={doRole}
+        doStatus={doStatus}
+        editingId={editingId}
+        draftUsername={draftUsername}
+        draftName={draftName}
+        setDraftUsername={setDraftUsername}
+        setDraftName={setDraftName}
+        saveEdit={saveEdit}
+        cancelEdit={cancelEdit}
+        startEdit={startEdit}
+        copyId={copyId}
+        busy={busy}
+        setConfirm={setConfirm}
+      />
+
+      <TableBlock
+        title="Users"
+        items={userRows}
+        onSort={onSort}
+        canEdit={(r)=> (ROLE_RANK[String(r||'user')]||0) < myRank}
+        getAllowedRoles={(targetRole)=>{
+          const targetRk = ROLE_RANK[String(targetRole||'user')]||0;
+          let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r]||0) <= myRank);
+          if (targetRk >= myRank) list = Array.from(new Set([String(targetRole||'user'), ...list]));
+          return list;
+        }}
+        doRole={doRole}
+        doStatus={doStatus}
+        editingId={editingId}
+        draftUsername={draftUsername}
+        draftName={draftName}
+        setDraftUsername={setDraftUsername}
+        setDraftName={setDraftName}
+        saveEdit={saveEdit}
+        cancelEdit={cancelEdit}
+        startEdit={startEdit}
+        copyId={copyId}
+        busy={busy}
+        setConfirm={setConfirm}
+      />
 
       <Dialog open={!!confirm} onClose={()=>setConfirm(null)}>
         <DialogTitle>ยืนยันการลบผู้ใช้</DialogTitle>
