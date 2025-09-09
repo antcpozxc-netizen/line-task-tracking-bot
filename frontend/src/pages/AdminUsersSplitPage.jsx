@@ -222,32 +222,11 @@ export default function AdminUsersSplitPage() {
     setDraftName('');
   };
 
-  // รองรับทั้งเคสมีฟังก์ชัน updateUser ใน ../api/client หรือไม่มี (fallback เรียก REST โดยตรง)
-  async function callUpdateUserProfile(user_id, payload){
-    try {
-      // ถ้า api client มีให้ใช้เลย
-      // eslint-disable-next-line no-undef
-      if (typeof updateUser === 'function') {
-        // @ts-ignore
-        return await updateUser(user_id, payload);
-      }
-    } catch {}
-    // fallback: เรียก endpoint มาตรฐาน (แก้ path ให้ตรงกับแบ็กเอนด์ของคุณ)
-    const res = await fetch('/api/users/update', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({ user_id, ...payload })
-    });
-    const j = await res.json().catch(()=> ({}));
-    if (!res.ok || j?.ok === false) throw new Error(j?.error || 'update failed');
-    return j;
-  }
-
   const saveEdit = async (u) => {
     if (!u) return;
     setBusy(true);
     try {
-      await callUpdateUserProfile(u.user_id, {
+      await updateUserProfile(u.user_id, {
         username: draftUsername,
         real_name: draftName
       });
