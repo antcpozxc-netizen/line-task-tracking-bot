@@ -614,7 +614,7 @@ function parseAssignLoose(text) {
   } else if (/เที่ยง(ตรง)?/.test(body)) {
     timeStr = '12:00'; remove(/เที่ยง(ตรง)?/g);
   }
-
+  // sadasdad
   // บ่ายหนึ่ง/สอง/... [ครึ่ง]
   if (!timeStr) {
     m = body.match(/บ่าย\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|12|\d{1,2})\s*(โมง)?(ครึ่ง)?/);
