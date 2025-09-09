@@ -953,11 +953,37 @@ app.post('/webhook/line', async (req,res)=>{
           } else {
             // 3) ออก magic token อายุสั้น
             const display = user?.real_name || user?.username || (await getDisplayName(userId)) || 'User';
-            const { token } = issueMagicToken({ uid: userId, name: display, role });
-
+            const { token } = issueMagicToken({ uid: userId, name: display, role }, '10m');
             const url = `${(PUBLIC_APP_URL || '').replace(/\/$/, '')}/auth/magic?t=${encodeURIComponent(token)}`;
-            await reply(ev.replyToken,
-              `ลิงก์เข้าระบบ :\n${url}`);
+
+            // ตอบเป็น Flex ปุ่ม “เว็บจัดการผู้ใช้งาน” (ซ่อน URL ยาวไว้หลังปุ่ม)
+            const bubble = {
+              type: 'bubble',
+              body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: [
+                  { type: 'text', text: 'เข้าสู่ระบบ', weight: 'bold', size: 'lg' },
+                  { type: 'text', text: 'กดปุ่มเพื่อเปิดเว็บจัดการผู้ใช้งาน', wrap: true, size: 'sm', color: '#666666' }
+                ]
+              },
+              footer: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: [
+                  {
+                    type: 'button',
+                    style: 'primary',
+                    height: 'sm',
+                    action: { type: 'uri', label: 'เว็บจัดการผู้ใช้งาน', uri: url }
+                  }
+                ],
+                flex: 0
+              }
+            };
+            await replyFlex(ev.replyToken, bubble);
           }
         } catch (e) {
           console.error('MAGIC_LINK_ERR', e?.message || e);
