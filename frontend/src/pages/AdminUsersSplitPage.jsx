@@ -23,7 +23,7 @@ const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
 const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
   username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
-  name:    { minWidth:{ xs:220, md:300 }, whiteSpace:'nowrap' },
+  name:    { minWidth:{ xs:180, md:240 }, whiteSpace:'nowrap' },
   role: {
     width: { xs: 150, md: 200 },
     whiteSpace: 'nowrap',
@@ -279,7 +279,6 @@ export default function AdminUsersSplitPage() {
                         <TextField
                           size="small"
                           value={draftUsername}
-                          autoFocus
                           disabled={!editable || busy}
                           onChange={(e)=>setDraftUsername(e.target.value)}
                           onKeyDown={(e)=>{
@@ -308,14 +307,14 @@ export default function AdminUsersSplitPage() {
                             e.stopPropagation();
                           }}
                           inputProps={{ style:{ padding: '6px 8px' } }}
-                          sx={{ width:{ xs:220, md:300 } }}   // ปรับให้แคบลง (ดูหัวข้อ C)
+                          sx={{ width:{ xs:220, md:300 } }}   
                         />
                       ) : (
                         <Box sx={{ whiteSpace:'nowrap' }}>{u.real_name || '-'}</Box>
                       )}
                     </TableCell>
-                    <TableCell sx={colSx.role}>
-                      <Stack spacing={0.5} direction={{ xs:'row', md:'column' }} alignItems="flex-start">
+                    <TableCell sx={{ ...colSx.role, overflow:'hidden' }}>
+                      <Box sx={{ display:'flex', alignItems:'center', gap:1, flexWrap:'nowrap' }}>
                         <Select
                           size="small"
                           value={r}
@@ -325,14 +324,16 @@ export default function AdminUsersSplitPage() {
                         >
                           {getAllowedRoles(r).map(v => (<MenuItem key={v} value={v}>{v}</MenuItem>))}
                         </Select>
-                        {/* แสดง chip แค่บน md+ และวาง “ใต้” select เพื่อลดการเบียดฝั่ง status */}
                         <Chip
                           size="small"
-                          sx={{ display:{ xs:'none', md:'inline-flex' } }}
                           label={r}
                           color={roleColor(r)}
+                          sx={{
+                            display:{ xs:'none', sm:'inline-flex' },   // แสดงเฉพาะจอ ≥ sm
+                            flexShrink: 0                              // ไม่หด ไม่ดัน status
+                          }}
                         />
-                      </Stack>
+                      </Box>
                     </TableCell>
                     <TableCell sx={colSx.status}>
                       <Select
