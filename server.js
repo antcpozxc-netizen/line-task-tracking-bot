@@ -1903,42 +1903,48 @@ app.post('/api/admin/users/update',
       // 1) พยายาม partial update ก่อน
       try {
         await callAppsScript('update_user', { user_id, ...patch });
+
+        // กระจายชื่อไป tasks (อย่าให้ fail มาทำให้ API ล้ม)
+        try { await callAppsScript('propagate_user_name', { user_id }); }
+        catch (p) { console.warn('propagate_user_name failed (partial):', p?.message || p); }
+
         return res.json({ ok:true });
       } catch (e1) {
         console.warn('update_user failed, fallback to upsert_user:', e1?.message || e1);
       }
 
       // 2) Fallback แบบปลอดภัย: ดึงค่าปัจจุบันมา preserve role/status (และค่าที่ไม่ได้แก้)
-      let cur = null;
+      let curUser = {};
       try {
-        cur = await callAppsScript('get_user', { user_id });
+        const cur = await callAppsScript('get_user', { user_id });
+        if (cur && cur.user) curUser = cur.user;
       } catch (e2) {
         console.warn('get_user failed during fallback:', e2?.message || e2);
       }
-      const curUser = (cur && cur.user) ? cur.user : {};
 
       const safe = {
         user_id,
-        // ถ้าไม่ได้แก้ฟิลด์นั้น ให้ใช้ค่าปัจจุบันแทน (กันโดนล้าง)
-        username:   patch.username  ?? curUser.username  ?? '',
-        real_name:  patch.real_name ?? curUser.real_name ?? '',
-        role:       curUser.role    ?? 'user',
-        status:     curUser.status  ?? 'Active'
+        username:  patch.username  ?? curUser.username  ?? '',
+        real_name: patch.real_name ?? curUser.real_name ?? '',
+        role:      curUser.role    ?? 'user',
+        status:    curUser.status  ?? 'Active',
       };
 
-      try {
-        await callAppsScript('upsert_user', safe);
-        return res.json({ ok:true, fallback:'upsert_user' });
-      } catch (e3) {
-        console.error('UPSERT_FALLBACK_ERR', e3?.message || e3);
-        return res.status(500).json({ ok:false, error:'UPSERT_FALLBACK_ERR' });
-      }
+      await callAppsScript('upsert_user', safe);
+
+      // กระจายชื่อหลัง fallback เช่นกัน
+      try { await callAppsScript('propagate_user_name', { user_id }); }
+      catch (p) { console.warn('propagate_user_name failed (fallback):', p?.message || p); }
+
+      return res.json({ ok:true, fallback:'upsert_user' });
+
     } catch (e) {
       console.error('UPDATE_USER_ERR', e?.message || e);
       res.status(500).json({ ok:false, error:'UPDATE_USER_ERR' });
     }
   }
 );
+
 
 
 
