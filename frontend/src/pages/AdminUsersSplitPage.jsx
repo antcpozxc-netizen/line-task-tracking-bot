@@ -13,7 +13,7 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-
+import DownloadIcon from '@mui/icons-material/Download';
 import useMe from '../hooks/useMe';
 import { listUsers, setUserRole, setUserStatus, deleteUser, updateUserProfile } from '../api/client';
 
@@ -249,6 +249,28 @@ export default function AdminUsersSplitPage() {
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [working, setWorking] = useState({ on:false, msg:'' });
 
+  // ---- export CSV (all users in one file) ----
+  const toCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`; // escape "
+  const handleExportCsv = () => {
+    try {
+      const headers = ['user_id','username','real_name','role','status','updated_at'];
+      const lines = [headers.join(',')].concat(
+        sorted.map(u => headers.map(h => toCsv(u?.[h])).join(','))
+      );
+      const csv = '\uFEFF' + lines.join('\r\n'); // BOM + CRLF
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const ts = new Date();
+      const name = `users_${ts.toISOString().slice(0,19).replace(/[:T]/g,'')}.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setSnack({ open:true, msg:'ส่งออก CSV ไม่สำเร็จ', sev:'error' });
+    }
+  };
+
   // sort state (ใช้ร่วมกันทั้ง 3 ตาราง)
   const [orderBy, setOrderBy] = useState('updated_at');
   const [order, setOrder] = useState('desc');
@@ -400,6 +422,19 @@ export default function AdminUsersSplitPage() {
       <Box sx={{ my:2, display:'flex', alignItems:'center', justifyContent:'space-between', gap:1, flexWrap:'wrap' }}>
         <Typography variant="h5" fontWeight={800}>Administrator management</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
+          <Tooltip title="ส่งออกผู้ใช้ทั้งหมดเป็น CSV"> 
+            <span> 
+              <Button 
+                size="small" 
+                variant="outlined" 
+                startIcon={<DownloadIcon />} 
+                onClick={handleExportCsv} 
+                disabled={!rows.length || busy} 
+              > 
+                ส่งออก CSV 
+              </Button> 
+            </span> 
+          </Tooltip>
           <Button size="small" variant="outlined" onClick={()=>navigate('/admin/users?assignedBy=me')}>
             ดูงานที่ฉันสั่ง
           </Button>
