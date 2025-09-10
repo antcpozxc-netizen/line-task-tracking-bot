@@ -57,7 +57,7 @@ const IdCell = memo(function IdCell({ id, copyId }) {
 
 const TableBlock = memo(function TableBlock(props) {
   const {
-    title, items, onSort, canEdit, getAllowedRoles, doRole, doStatus,
+    title, items, onSort, canEditProfile, canEditRoleStatus, getAllowedRoles, doRole, doStatus,
     editingId, draftUsername, draftName, setDraftUsername, setDraftName,
     saveEdit, cancelEdit, startEdit, copyId, busy
   } = props;
@@ -97,7 +97,8 @@ const TableBlock = memo(function TableBlock(props) {
           <TableBody>
             {items.map(u => {
               const r = String(u.role||'user').toLowerCase();
-              const editable = canEdit(r);
+              const editableProfile   = canEditProfile(u);
+              const editableRoleState = canEditRoleStatus(u);
 
               return (
                 <TableRow key={u.user_id} hover>
@@ -109,7 +110,7 @@ const TableBlock = memo(function TableBlock(props) {
                       <TextField
                         size="small"
                         value={draftUsername}
-                        disabled={!editable || busy}
+                        disabled={!editableProfile || busy}
                         onChange={(e)=>setDraftUsername(e.target.value)}
                         onMouseDown={(e)=>e.stopPropagation()}
                         inputRef={usernameRef}
@@ -134,7 +135,7 @@ const TableBlock = memo(function TableBlock(props) {
                       <TextField
                         size="small"
                         value={draftName}
-                        disabled={!editable || busy}
+                        disabled={!editableProfile || busy}
                         onChange={(e)=>setDraftName(e.target.value)}
                         onMouseDown={(e)=>e.stopPropagation()}
                         inputRef={nameRef}
@@ -159,7 +160,7 @@ const TableBlock = memo(function TableBlock(props) {
                       <Select
                         size="small"
                         value={r}
-                        disabled={!editable || busy}
+                        disabled={!editableProfile || busy}
                         sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
                         onChange={(e)=>doRole(u, e.target.value)}
                       >
@@ -179,7 +180,7 @@ const TableBlock = memo(function TableBlock(props) {
                     <Select
                       size="small"
                       value={u.status || 'Active'}
-                      disabled={!editable || busy}
+                      disabled={!editableProfile || busy}
                       onChange={(e)=>doStatus(u, e.target.value)}
                       sx={{ minWidth:{ xs:110, sm:120 }, '& .MuiSelect-select': { py:0.5 } }}
                     >
@@ -193,12 +194,12 @@ const TableBlock = memo(function TableBlock(props) {
 
                   {/* action */}
                   <TableCell sx={colSx.action} align="center">
-                    {editable && editingId !== u.user_id && (
+                    {editableProfile && editingId !== u.user_id && (
                       <Stack direction="row" spacing={0.5} justifyContent="center">
                         <Button size="small" variant="outlined" disabled={busy} onClick={()=>startEdit(u)}>แก้ไข</Button>
                         <Tooltip title="ตั้งเป็น Inactive">
                           <span>
-                            <IconButton color="error" disabled={busy}
+                            <IconButton color="error" disabled={busy || !editableRoleState}
                               onClick={()=>props.setConfirm({ user_id: u.user_id, name: u.real_name || u.username || u.user_id })}>
                               <DeleteIcon />
                             </IconButton>
@@ -206,13 +207,13 @@ const TableBlock = memo(function TableBlock(props) {
                         </Tooltip>
                       </Stack>
                     )}
-                    {editable && editingId === u.user_id && (
+                    {editableProfile && editingId === u.user_id && (
                       <Stack direction="row" spacing={0.5} justifyContent="center">
                         <Button size="small" variant="contained" disabled={busy} onClick={()=>saveEdit(u)}>บันทึก</Button>
                         <Button size="small" variant="text" disabled={busy} onClick={cancelEdit}>ยกเลิก</Button>
                       </Stack>
                     )}
-                    {!editable && (
+                    {!editableProfile && (
                       <Tooltip title="ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า">
                         <span><Button size="small" disabled>แก้ไข</Button></span>
                       </Tooltip>
@@ -240,6 +241,7 @@ export default function AdminUsersSplitPage() {
   const { data } = useMe();
   const myRole = (data?.user?.role || 'user').toLowerCase();
   const myRank = ROLE_RANK[myRole] || 0;
+  const myId   = data?.session?.uid || null;
   const navigate = useNavigate();
 
   const [rows, setRows] = useState([]);
@@ -314,8 +316,14 @@ export default function AdminUsersSplitPage() {
     return { devRows: dev, mgrRows: mgr, userRows: usr };
   }, [sorted]);
 
-  const canEdit = (targetRole) =>
-    (ROLE_RANK[String(targetRole||'user')] || 0) < myRank;
+  // โปรไฟล์ (username / real_name): อนุญาตเสมอถ้าเป็น "เจ้าของ record" หรือผู้มีสิทธิ์สูงกว่า
+  const canEditProfile = (u) =>
+    (u?.user_id === myId) ||
+    ((ROLE_RANK[String(u?.role||'user')] || 0) < myRank);
+
+  // role/status: ยึดกฎเดิม — ต้อง “สูงกว่า” เท่านั้น (ห้ามแก้ของตัวเองถ้า rank เท่ากัน)
+  const canEditRoleStatus = (u) =>
+    ((ROLE_RANK[String(u?.role||'user')] || 0) < myRank);
 
   const getAllowedRoles = (targetRole) => {
     const target = String(targetRole || 'user');
@@ -459,7 +467,8 @@ export default function AdminUsersSplitPage() {
         title="Developers"
         items={devRows}
         onSort={onSort}
-        canEdit={(r)=> (ROLE_RANK[String(r||'user')]||0) < myRank}
+        canEditProfile={canEditProfile}
+        canEditRoleStatus={canEditRoleStatus}
         getAllowedRoles={(targetRole)=>{
           const targetRk = ROLE_RANK[String(targetRole||'user')]||0;
           let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r]||0) <= myRank);
@@ -485,7 +494,8 @@ export default function AdminUsersSplitPage() {
         title="Admins & Supervisors"
         items={mgrRows}
         onSort={onSort}
-        canEdit={(r)=> (ROLE_RANK[String(r||'user')]||0) < myRank}
+        canEditProfile={canEditProfile}
+        canEditRoleStatus={canEditRoleStatus}
         getAllowedRoles={(targetRole)=>{
           const targetRk = ROLE_RANK[String(targetRole||'user')]||0;
           let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r]||0) <= myRank);
@@ -511,7 +521,8 @@ export default function AdminUsersSplitPage() {
         title="Users"
         items={userRows}
         onSort={onSort}
-        canEdit={(r)=> (ROLE_RANK[String(r||'user')]||0) < myRank}
+        canEditProfile={canEditProfile}
+        canEditRoleStatus={canEditRoleStatus}
         getAllowedRoles={(targetRole)=>{
           const targetRk = ROLE_RANK[String(targetRole||'user')]||0;
           let list = ORDERED_ROLES.filter(r => (ROLE_RANK[r]||0) <= myRank);

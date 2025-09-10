@@ -2011,16 +2011,33 @@ app.get('/api/admin/users',
   }
 );
 
+// POST /api/admin/users/update
 app.post('/api/admin/users/update',
   requireAuth,
-  requireRole(['developer','admin','supervisor']),
   express.json(),
   async (req, res) => {
     try {
       const { user_id, username, real_name } = req.body || {};
-      if (!user_id) return res.status(400).json({ ok:false, error:'missing user_id' });
+      if (!user_id) {
+        return res.status(400).json({ ok:false, error:'missing user_id' });
+      }
 
-      // เฉพาะฟิลด์ที่ต้องการแก้
+      // -------------------------------
+      // ✅ ตรวจสิทธิ์
+      // -------------------------------
+      const isOwner = req.sess.uid === user_id;
+      if (!isOwner) {
+        // ถ้าไม่ใช่เจ้าของ record → ต้องมี role admin/supervisor/developer เท่านั้น
+        const r = await callAppsScript('get_user', { user_id: req.sess.uid });
+        const myRole = String(r.user?.role || 'user').toLowerCase();
+        if (!['developer','admin','supervisor'].includes(myRole)) {
+          return res.status(403).json({ ok:false, error:'FORBIDDEN' });
+        }
+      }
+
+      // -------------------------------
+      // ✅ ฟิลด์ที่แก้ไขได้
+      // -------------------------------
       const patch = {};
       if (username !== undefined)  patch.username  = String(username);
       if (real_name !== undefined) patch.real_name = String(real_name);
@@ -2028,11 +2045,13 @@ app.post('/api/admin/users/update',
         return res.status(400).json({ ok:false, error:'nothing_to_update' });
       }
 
-      // 1) พยายาม partial update ก่อน
+      // -------------------------------
+      // ✅ พยายาม partial update ก่อน
+      // -------------------------------
       try {
         await callAppsScript('update_user', { user_id, ...patch });
 
-        // กระจายชื่อไป tasks (อย่าให้ fail มาทำให้ API ล้ม)
+        // กระจายชื่อไป tasks (ไม่บังคับ ถ้า fail ไม่ทำให้ API พัง)
         try { await callAppsScript('propagate_user_name', { user_id }); }
         catch (p) { console.warn('propagate_user_name failed (partial):', p?.message || p); }
 
@@ -2041,7 +2060,9 @@ app.post('/api/admin/users/update',
         console.warn('update_user failed, fallback to upsert_user:', e1?.message || e1);
       }
 
-      // 2) Fallback แบบปลอดภัย: ดึงค่าปัจจุบันมา preserve role/status (และค่าที่ไม่ได้แก้)
+      // -------------------------------
+      // ✅ fallback → upsert_user
+      // -------------------------------
       let curUser = {};
       try {
         const cur = await callAppsScript('get_user', { user_id });
@@ -2060,7 +2081,6 @@ app.post('/api/admin/users/update',
 
       await callAppsScript('upsert_user', safe);
 
-      // กระจายชื่อหลัง fallback เช่นกัน
       try { await callAppsScript('propagate_user_name', { user_id }); }
       catch (p) { console.warn('propagate_user_name failed (fallback):', p?.message || p); }
 
@@ -2072,6 +2092,7 @@ app.post('/api/admin/users/update',
     }
   }
 );
+
 
 
 

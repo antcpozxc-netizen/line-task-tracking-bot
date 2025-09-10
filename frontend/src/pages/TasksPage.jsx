@@ -44,6 +44,7 @@ function cmp(a, b, by) {
   const B = (get(b, by) || get(b, 'task_' + by) || '').toString();
   return A.localeCompare(B, 'th');
 }
+const shortId = (s='') => String(s).slice(-6); // เอาหลัง 6 ตัวไว้พอจำได้
 
 export default function TasksPage() {
   const [users, setUsers] = useState([]);
@@ -217,6 +218,7 @@ export default function TasksPage() {
                     {[
                       ['task_id', 'task_id', { nowrap:true }],
                       ['detail', 'detail', {}],
+                      ['assigner', 'assigner_name', { nowrap:true }],   // << เพิ่มบรรทัดนี้
                       ['status', 'status', { nowrap:true }],
                       ['deadline', 'deadline', { nowrap:true }],
                       ['note', 'note', { hideXs:true }],
@@ -249,6 +251,16 @@ export default function TasksPage() {
                     <TableRow key={t.task_id || Math.random()} hover>
                       <TableCell sx={{ whiteSpace:'nowrap' }}>{t.task_id}</TableCell>
                       <TableCell>{t.task_detail || t.detail || ''}</TableCell>
+                      {/* assigner (ผู้สั่งงาน) */}
+                      <TableCell sx={{ whiteSpace:'nowrap' }}>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Avatar
+                            sx={{ width:24, height:24 }}
+                            src={t.assigner_id ? `/api/profile/${encodeURIComponent(t.assigner_id)}/photo` : undefined}
+                          />
+                          <span>{t.assigner_name || (t.assigner_id ? `#${shortId(t.assigner_id)}` : '-')}</span>
+                        </Stack>
+                      </TableCell>
                       <TableCell sx={{ whiteSpace:'nowrap' }}><StatusChip value={t.status} /></TableCell>
                       <TableCell sx={{ whiteSpace:'nowrap' }}>{fmt(parseDeadline(t.deadline))}</TableCell>
                       <TableCell sx={{ display:{ xs:'none', sm:'table-cell' } }}>{t.note || ''}</TableCell>
@@ -278,7 +290,7 @@ export default function TasksPage() {
 
                   {activeUser && tasks.length===0 && (
                     <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py:3, color:'text.secondary' }}>
+                      <TableCell colSpan={8} align="center" sx={{ py:3, color:'text.secondary' }}>
                         No tasks
                       </TableCell>
                     </TableRow>
