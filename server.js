@@ -343,13 +343,15 @@ function renderTaskCard({ id, title, date, due, status, assignee, assigner }, op
 
 
 
-function renderUserCard({ name, role, status, updated }) {
+function renderUserCard({ name, username, role, status, updated }) {
+  const uname = username ? `@${username}` : '';
   return {
     type: 'bubble',
     body: {
       type: 'box', layout: 'vertical', spacing: 'sm',
       contents: [
         { type: 'text', text: name || '-', weight: 'bold', wrap: true },
+        ...(uname ? [{ type: 'text', text: uname, size: 'xs', color: '#666666' }] : []),
         { type: 'text', text: `บทบาท: ${role || '-'}`, size: 'sm' },
         { type: 'text', text: `สถานะ: ${status || '-'}`, size: 'sm' },
         { type: 'text', text: `อัปเดต: ${updated || '-'}`, size: 'xs', color: '#777777' }
@@ -357,6 +359,7 @@ function renderUserCard({ name, role, status, updated }) {
     }
   };
 }
+
 
 async function pushText(to, text){
   if (!to) return;
@@ -1187,6 +1190,7 @@ app.post('/webhook/line', async (req,res)=>{
         );
         const bubbles = users.slice(0, 10).map(u => renderUserCard({
           name: u.real_name || u.username || '-',
+          username: u.username || '',
           role: (u.role || 'User'),
           status: (u.status || 'Active'),
           updated: (u.updated_at || '').slice(0,10)
@@ -1392,32 +1396,34 @@ app.post('/webhook/line', async (req,res)=>{
           const admins = (r.users||[]).filter(u =>
             ['admin','supervisor'].includes(String(u.role||'').toLowerCase())
           );
-          if (!admins.length) { await reply(ev.replyToken, 'ยังไม่มีแอดมินในระบบ'); continue; }
+          if (!admins.length) { await reply(ev.replyToken, 'ยังไม่มีแอดมินในระบบ'); return; }
 
-          const lines = admins.slice(0, 15).map(u =>
+          const items = admins.slice(0, 15).map(u =>
             `• @${u.username || '-'}${u.real_name ? ` – ${u.real_name}` : ''}`
           );
-          const more = admins.length>15 ? `\n…และอีก ${admins.length-15} คน` : '';
+          const more = admins.length > 15 ? `…และอีก ${admins.length-15} คน` : '';
 
-          const help =
-            `ส่งข้อความถึงแอดมิน:
-            พิมพ์  dm @username ข้อความ
-            หรือ   ถึงแอดมิน @username ข้อความ
+          const helpLines = [
+            'ส่งข้อความถึงแอดมิน:',
+            'พิมพ์  dm @username ข้อความ',
+            'หรือ   ถึงแอดมิน @username ข้อความ',
+            '',
+            'ตัวอย่าง:',
+            'dm @po ขอสิทธิ์เข้าถึงชีท',
+            '',
+            'รายชื่อแอดมิน:',
+            ...items,
+            more && more
+          ].filter(Boolean);
 
-            ตัวอย่าง:
-            dm @po ขอสิทธิ์เข้าถึงชีท
-
-            รายชื่อแอดมิน:
-            ${lines.join('\n')}${more}`;
-
-
-          await reply(ev.replyToken, help);
+          await reply(ev.replyToken, helpLines.join('\n'));
         } catch (e) {
           console.error('CONTACT_ADMIN_LIST_ERR', e);
           await reply(ev.replyToken, 'ดึงรายชื่อแอดมินไม่สำเร็จ ลองใหม่อีกครั้ง');
         }
-        continue;
+        return;
       }
+
 
 
 
