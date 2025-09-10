@@ -2052,8 +2052,11 @@ app.post('/api/admin/users/update',
         await callAppsScript('update_user', { user_id, ...patch });
 
         // กระจายชื่อไป tasks (ไม่บังคับ ถ้า fail ไม่ทำให้ API พัง)
-        try { await callAppsScript('propagate_user_name', { user_id }); }
-        catch (p) { console.warn('propagate_user_name failed (partial):', p?.message || p); }
+        try {
+          await callAppsScript('propagate_user_name', { user_id, prefer: 'username' }); // 👈 เพิ่ม prefer
+        } catch (p) {
+          console.warn('propagate_user_name failed (partial):', p?.message || p);
+        }
 
         return res.json({ ok:true });
       } catch (e1) {
@@ -2081,8 +2084,11 @@ app.post('/api/admin/users/update',
 
       await callAppsScript('upsert_user', safe);
 
-      try { await callAppsScript('propagate_user_name', { user_id }); }
-      catch (p) { console.warn('propagate_user_name failed (fallback):', p?.message || p); }
+      try {
+        await callAppsScript('propagate_user_name', { user_id, prefer: 'username' }); // 👈 เพิ่ม prefer
+      } catch (p) {
+        console.warn('propagate_user_name failed (fallback):', p?.message || p);
+      }
 
       return res.json({ ok:true, fallback:'upsert_user' });
 
